@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
+import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/pullsrc/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -121,6 +122,7 @@ export default function RootLayout({
           </div>
           <Toaster />
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
