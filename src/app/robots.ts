@@ -7,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       disallow: ["/api/"],
     },
-    sitemap: "https://pullsrc.app/sitemap.xml",
-    host: "https://pullsrc.app",
+    sitemap: "https://pullsrc.byavi.in/sitemap.xml",
+    host: "https://pullsrc.byavi.in",
   };
 }

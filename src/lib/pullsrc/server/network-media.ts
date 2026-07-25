@@ -34,7 +34,7 @@ function classify(
 }
 
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; PullSRCBot/1.0; +https://pullsrc.app) AppleWebKit/537.36";
+  "Mozilla/5.0 (compatible; PullSRCBot/1.0; +https://pullsrc.byavi.in) AppleWebKit/537.36";
 
 // Checked first, used alone when present — reliable with no false positives.
 const TAB_ROLE_SELECTOR = '[role="tab"]';

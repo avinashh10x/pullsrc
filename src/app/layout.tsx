@@ -31,7 +31,7 @@ const DESCRIPTION =
   "Paste any webpage URL and instantly extract images, fonts, colors, videos, and 3D models with credit details for your next design or build.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://pullsrc.app"),
+  metadataBase: new URL("https://pullsrc.byavi.in"),
   applicationName: "PullSRC",
   title: {
     default: `PullSRC — ${TAGLINE}`,
@@ -79,7 +79,7 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     images: ["/og.png"],
   },
-  robots: { 
+  robots: {
     index: true,
     follow: true,
     googleBot: {
@@ -105,7 +105,7 @@ export default function RootLayout({
     >
       <head>
         <meta name="apple-mobile-web-app-title" content="PullSRC" />
-        </head>
+      </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider
           attribute="class"
