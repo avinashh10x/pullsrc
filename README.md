@@ -1,4 +1,6 @@
-# PullSRC
+# PullSRC - Every asset, one paste
+
+![PullSRC](public/image.png)
 
 PullSRC is a web asset extraction tool for builders, designers, and developers who need to quickly collect the visible source materials from a single web page.
 
