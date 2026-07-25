@@ -68,6 +68,50 @@ function ensureFileExtension(name: string, fileType: string): string {
   return `${match ? name.slice(0, match.index) : name}.${ext}`
 }
 
+// Adaptive-stream CDNs publish several files per video/audio track —
+// different qualities, a master playlist, a "dvd" rendition, etc — all
+// sharing one directory and a filename prefix up to the first quality/variant
+// marker. Grouping on that prefix collapses those into a single
+// representative per real asset, without merging genuinely distinct assets
+// that happen to share a folder.
+// No trailing \b: variant tags are often followed directly by more of the
+// same "word" (e.g. "adaptive_4", "adaptive_2-1"), and \b won't match between
+// two word characters like "e" and "_" — the leading separator is anchor enough.
+const VARIANT_MARKER = /[._-](?:dvd|hd|sd|adaptive|playlist|master|thumbgrid|original|subtitles)/i
+
+function mediaGroupKey(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const segments = parsed.pathname.split("/")
+    const filename = segments.pop() ?? ""
+    const stem = filename.replace(/\.[a-z0-9]+$/i, "")
+    const markerIndex = stem.search(VARIANT_MARKER)
+    const base = markerIndex >= 0 ? stem.slice(0, markerIndex) : stem
+    return `${parsed.origin}${segments.join("/")}/${base}`
+  } catch {
+    return url
+  }
+}
+
+interface MediaCandidate {
+  url: string
+  isStreaming: boolean
+}
+
+function pickBestPerGroup<T extends MediaCandidate>(candidates: T[]): T[] {
+  const bestByGroup = new Map<string, T>()
+  for (const candidate of candidates) {
+    const key = mediaGroupKey(candidate.url)
+    const existing = bestByGroup.get(key)
+    // Prefer a direct playable file over a streaming manifest; otherwise keep
+    // whichever was discovered first.
+    if (!existing || (existing.isStreaming && !candidate.isStreaming)) {
+      bestByGroup.set(key, candidate)
+    }
+  }
+  return [...bestByGroup.values()]
+}
+
 function familyFromFontFileName(url: string): string {
   const base = nameFromUrl(url).replace(/\.[a-z0-9]+$/i, "")
   return base.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -235,20 +279,34 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     send({ type: "asset", asset })
   }
 
+  // Buffered rather than emitted immediately: adaptive-stream CDNs surface many
+  // URLs (qualities, playlists, direct file) per real video/audio track, so
+  // they need to be seen in full and deduped (see pickBestPerGroup) before
+  // going out.
+  const networkVideoCandidates: RawVideo[] = []
+  const networkAudioCandidates: MediaCandidate[] = []
+
   function onNetworkMedia(media: RawNetworkMedia) {
-    const promise =
-      media.kind === "video"
-        ? emitVideo({ url: media.url, isStreaming: media.isStreaming })
-        : media.kind === "audio"
-          ? emitAudio({ url: media.url })
-          : emitModel({ url: media.url })
-    pendingMedia.push(promise)
+    if (media.kind === "video") {
+      networkVideoCandidates.push({ url: media.url, isStreaming: media.isStreaming })
+      return
+    }
+    if (media.kind === "audio") {
+      networkAudioCandidates.push({ url: media.url, isStreaming: media.isStreaming })
+      return
+    }
+    pendingMedia.push(emitModel({ url: media.url }))
   }
 
   const networkMediaDone = captureNetworkMedia(pageUrlString, onNetworkMedia)
 
-  for (const video of extractVideos($, html, pageUrlString)) pendingMedia.push(emitVideo(video))
-  for (const audio of extractAudio($, html, pageUrlString)) pendingMedia.push(emitAudio(audio))
+  // Static extraction can find the same adaptive-stream variants the network
+  // capture does (e.g. player config JSON inlined in the page), so these feed
+  // the same buffer/dedup pass rather than being emitted immediately.
+  networkVideoCandidates.push(...extractVideos($, html, pageUrlString))
+  networkAudioCandidates.push(
+    ...extractAudio($, html, pageUrlString).map((audio) => ({ url: audio.url, isStreaming: false }))
+  )
   for (const model of extractModels($, html, pageUrlString)) pendingMedia.push(emitModel(model))
 
   // --- images + logo candidate ---------------------------------------------
@@ -381,8 +439,15 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
   send({ type: "category", category: "colors", assets: colorAssets })
   send({ type: "category-done", category: "colors" })
 
-  // wait on the browser session plus any per-asset lookups still in flight
+  // wait on the browser session, then dedupe its raw video/audio hits down to
+  // one representative per real asset before emitting
   await networkMediaDone
+  for (const video of pickBestPerGroup(networkVideoCandidates)) {
+    pendingMedia.push(emitVideo(video))
+  }
+  for (const audio of pickBestPerGroup(networkAudioCandidates)) {
+    pendingMedia.push(emitAudio({ url: audio.url }))
+  }
   await Promise.all(pendingMedia)
 
   send({ type: "category-done", category: "video" })

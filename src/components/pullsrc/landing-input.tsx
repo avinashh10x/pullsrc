@@ -1,21 +1,18 @@
 "use client"
 
-import { ArrowRight, Link2, TriangleAlert } from "lucide-react"
+import { ArrowRight, Link2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export function LandingInput({
   value,
   onChange,
   onSubmit,
-  showBareDomainWarning,
 }: {
   value: string
   onChange: (value: string) => void
   onSubmit: () => void
-  showBareDomainWarning: boolean
 }) {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
@@ -65,24 +62,13 @@ export function LandingInput({
             </Button>
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Enter the URL of the page you want to fetch.
+            Enter a page URL, not just a domain — e.g.{" "}
+            <span className="font-mono text-foreground">
+              acme.com/product-page
+            </span>
+            .
           </p>
         </form>
-
-        {showBareDomainWarning && (
-          <Alert className="mt-4 max-w-3xl text-left">
-            <TriangleAlert />
-            <AlertTitle>That looks like a whole site, not a page</AlertTitle>
-            <AlertDescription>
-              PullSRC only scans one specific page at a time, so the result is
-              always exactly what you asked for. Paste the page you mean, e.g.{" "}
-              <span className="font-mono text-foreground">
-                acme.com/product-page
-              </span>
-              .
-            </AlertDescription>
-          </Alert>
-        )}
       </div>
     </div>
   )

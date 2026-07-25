@@ -12,6 +12,10 @@ const MODEL_EXT = /\.(glb|gltf|usdz|obj|fbx)(?:\?|#|$)/i;
 const MANIFEST_EXT = /\.(m3u8|mpd)(?:\?|#|$)/i;
 // HLS/DASH segment/fragment files — chunks of a stream, not standalone videos
 const SEGMENT_EXT = /\.(ts|m4s)(?:\?|#|$)/i;
+// Adaptive-stream renditions split the audio track into its own file/manifest
+// (e.g. foo_dvd.audio.m3u8) — that's audio, not a video, even though it sits
+// right next to the real video variants under the same content-type/manifest rules.
+const AUDIO_ONLY_HINT = /[._-]audio\.(m3u8|mpd|mp4|m4a|aac)(?:\?|#|$)/i;
 
 function classify(
   url: string,
@@ -19,9 +23,11 @@ function classify(
 ): { kind: RawNetworkMedia["kind"]; isStreaming: boolean } | null {
   if (SEGMENT_EXT.test(url)) return null;
 
-  const isStreaming =
+  const isManifest =
     MANIFEST_EXT.test(url) || /mpegurl|dash\+xml/i.test(contentType);
-  if (isStreaming) return { kind: "video", isStreaming: true };
+
+  if (AUDIO_ONLY_HINT.test(url)) return { kind: "audio", isStreaming: isManifest };
+  if (isManifest) return { kind: "video", isStreaming: true };
 
   if (VIDEO_EXT.test(url) || contentType.startsWith("video/"))
     return { kind: "video", isStreaming: false };
