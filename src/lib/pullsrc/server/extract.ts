@@ -17,10 +17,13 @@ export interface RawFont {
 export interface RawVideo {
   url: string
   isStreaming: boolean
+  variants?: RawVideo[]
 }
 
 export interface RawAudio {
   url: string
+  isStreaming: boolean
+  variants?: RawAudio[]
 }
 
 export interface RawModel3D {
@@ -223,8 +226,23 @@ export function parseColors(cssText: string): string[] {
 }
 
 const VIDEO_FILE_PATTERN =
-  /https?:\/\/[^\s"'<>\\]+?\.(?:mp4|webm|mov|m4v|ogv)(?:\?[^\s"'<>\\]*)?/gi
-const MANIFEST_PATTERN = /https?:\/\/[^\s"'<>\\]+?\.(?:m3u8|mpd)(?:\?[^\s"'<>\\]*)?/gi
+  /(?:(?:https?:)?\/\/|\/|\.\.?\/)[^\s"'<>\\]+?\.(?:mp4|webm|mov|m4v|ogv|avi|mkv|3gp)(?:\?[^\s"'<>\\]*)?/gi
+const MANIFEST_PATTERN = /(?:(?:https?:)?\/\/|\/|\.\.?\/)[^\s"'<>\\]+?\.(?:m3u8|mpd)(?:\?[^\s"'<>\\]*)?/gi
+const AUDIO_MANIFEST_HINT = /(?:[._-]audio|audio[._-]|\/audio\/).*(?:m3u8|mpd)(?:\?|#|$)/i
+
+function mediaAttributeSources($: cheerio.CheerioAPI, selector: string, pageUrl: string): string[] {
+  const found = new Set<string>()
+  $(selector).each((_, el) => {
+    const $el = $(el)
+    for (const attribute of ["src", "href", "data-src", "data-lazy-src", "data-url", "data-file", "data-asset-url", "data-model", "data-model-url"]) {
+      const value = $el.attr(attribute)
+      if (!value) continue
+      const absolute = resolveUrl(value, pageUrl)
+      if (absolute) found.add(absolute)
+    }
+  })
+  return [...found]
+}
 
 export function extractVideos($: cheerio.CheerioAPI, html: string, pageUrl: string): RawVideo[] {
   const seen = new Set<string>()
@@ -237,15 +255,7 @@ export function extractVideos($: cheerio.CheerioAPI, html: string, pageUrl: stri
     videos.push({ url: absolute, isStreaming })
   }
 
-  $("video, video source").each((_, el) => {
-    const $el = $(el)
-    const src =
-      $el.attr("src") ??
-      $el.attr("data-src") ??
-      $el.attr("data-lazy-src") ??
-      $el.attr("data-original")
-    if (src) add(src, false)
-  })
+  for (const src of mediaAttributeSources($, "video, video source, link[as='video']", pageUrl)) add(src, false)
 
   const ogVideo =
     $('meta[property="og:video:secure_url"]').attr("content") ??
@@ -253,11 +263,11 @@ export function extractVideos($: cheerio.CheerioAPI, html: string, pageUrl: stri
     $('meta[property="og:video"]').attr("content")
   if (ogVideo) add(ogVideo, false)
 
-  for (const match of html.matchAll(MANIFEST_PATTERN)) {
-    add(match[0], true)
+  for (const match of html.replaceAll("\\/", "/").matchAll(MANIFEST_PATTERN)) {
+    if (!AUDIO_MANIFEST_HINT.test(match[0])) add(match[0], true)
   }
 
-  for (const match of html.matchAll(VIDEO_FILE_PATTERN)) {
+  for (const match of html.replaceAll("\\/", "/").matchAll(VIDEO_FILE_PATTERN)) {
     add(match[0], false)
   }
 
@@ -265,35 +275,31 @@ export function extractVideos($: cheerio.CheerioAPI, html: string, pageUrl: stri
 }
 
 const AUDIO_FILE_PATTERN =
-  /https?:\/\/[^\s"'<>\\]+?\.(?:mp3|wav|ogg|m4a|flac|aac|weba)(?:\?[^\s"'<>\\]*)?/gi
+  /(?:(?:https?:)?\/\/|\/|\.\.?\/)[^\s"'<>\\]+?\.(?:mp3|wav|ogg|m4a|flac|aac|weba|opus|aiff)(?:\?[^\s"'<>\\]*)?/gi
 
 export function extractAudio($: cheerio.CheerioAPI, html: string, pageUrl: string): RawAudio[] {
   const seen = new Set<string>()
   const audio: RawAudio[] = []
 
-  function add(rawUrl: string) {
+  function add(rawUrl: string, isStreaming = false) {
     const absolute = resolveUrl(rawUrl, pageUrl)
     if (!absolute || seen.has(absolute)) return
     seen.add(absolute)
-    audio.push({ url: absolute })
+    audio.push({ url: absolute, isStreaming })
   }
 
-  $("audio, audio source").each((_, el) => {
-    const $el = $(el)
-    const src =
-      $el.attr("src") ??
-      $el.attr("data-src") ??
-      $el.attr("data-lazy-src") ??
-      $el.attr("data-original")
-    if (src) add(src)
-  })
+  for (const src of mediaAttributeSources($, "audio, audio source, link[as='audio']", pageUrl)) add(src)
 
   const ogAudio = $('meta[property="og:audio:secure_url"]').attr("content") ??
     $('meta[property="og:audio:url"]').attr("content") ??
     $('meta[property="og:audio"]').attr("content")
   if (ogAudio) add(ogAudio)
 
-  for (const match of html.matchAll(AUDIO_FILE_PATTERN)) {
+  for (const match of html.replaceAll("\\/", "/").matchAll(MANIFEST_PATTERN)) {
+    if (AUDIO_MANIFEST_HINT.test(match[0])) add(match[0], true)
+  }
+
+  for (const match of html.replaceAll("\\/", "/").matchAll(AUDIO_FILE_PATTERN)) {
     add(match[0])
   }
 
@@ -301,7 +307,7 @@ export function extractAudio($: cheerio.CheerioAPI, html: string, pageUrl: strin
 }
 
 const MODEL_FILE_PATTERN =
-  /https?:\/\/[^\s"'<>\\]+?\.(?:glb|gltf|usdz|obj|fbx)(?:\?[^\s"'<>\\]*)?/gi
+  /(?:(?:https?:)?\/\/|\/|\.\.?\/)[^\s"'<>\\]+?\.(?:glb|gltf|usdz|obj|fbx|dae|stl|ply|3mf|vrm|x3d|wrl|splat)(?:\?[^\s"'<>\\]*)?/gi
 
 export function extractModels($: cheerio.CheerioAPI, html: string, pageUrl: string): RawModel3D[] {
   const seen = new Set<string>()
@@ -314,14 +320,17 @@ export function extractModels($: cheerio.CheerioAPI, html: string, pageUrl: stri
     models.push({ url: absolute })
   }
 
-  // <model-viewer> is the standard custom element for embedding 3D models
+  // <model-viewer> is the standard custom element for embedding 3D models.
+  // Preloaded files and asset links are common in Three.js/Babylon pages too.
   $("model-viewer[src], model-viewer[ios-src]").each((_, el) => {
     const $el = $(el)
     const src = $el.attr("src") ?? $el.attr("ios-src")
     if (src) add(src)
   })
 
-  for (const match of html.matchAll(MODEL_FILE_PATTERN)) {
+  for (const src of mediaAttributeSources($, "link[as='model'], [data-model], [data-model-url]", pageUrl)) add(src)
+
+  for (const match of html.replaceAll("\\/", "/").matchAll(MODEL_FILE_PATTERN)) {
     add(match[0])
   }
 

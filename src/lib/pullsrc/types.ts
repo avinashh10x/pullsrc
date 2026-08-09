@@ -23,6 +23,16 @@ interface BaseAsset {
   credit: CreditInfo
 }
 
+export interface MediaVariant {
+  url: string
+  name: string
+  fileType: string
+  size: string
+  wasStreaming: boolean
+  drmProtected?: boolean
+  recommended?: boolean
+}
+
 export interface ImageAsset extends BaseAsset {
   category: "images"
   url: string
@@ -51,16 +61,21 @@ export interface VideoAsset extends BaseAsset {
   url: string
   wasStreaming: boolean
   drmProtected?: boolean
+  variants?: MediaVariant[]
 }
 
 export interface AudioAsset extends BaseAsset {
   category: "audio"
   url: string
+  wasStreaming: boolean
+  drmProtected?: boolean
+  variants?: MediaVariant[]
 }
 
 export interface Model3DAsset extends BaseAsset {
   category: "model3d"
   url: string
+  variants?: MediaVariant[]
 }
 
 export type Asset =

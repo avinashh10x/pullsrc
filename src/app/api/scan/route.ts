@@ -35,6 +35,7 @@ import type {
   FontAsset,
   ImageAsset,
   LogoAsset,
+  MediaVariant,
   Model3DAsset,
   ScanError,
   ScanStreamEvent,
@@ -42,6 +43,10 @@ import type {
 } from "@/lib/pullsrc/types"
 
 export const dynamic = "force-dynamic"
+
+// A page can legitimately have a gallery, soundtrack, or model library. Keep
+// a generous guardrail so one pathological page cannot exhaust a request.
+const MAX_MEDIA_ASSETS_PER_KIND = 100
 
 function fileTypeFromUrl(url: string, fallback: string): string {
   const match = /\.([a-z0-9]{2,5})(?:\?|#|$)/i.exec(url)
@@ -77,7 +82,7 @@ function ensureFileExtension(name: string, fileType: string): string {
 // No trailing \b: variant tags are often followed directly by more of the
 // same "word" (e.g. "adaptive_4", "adaptive_2-1"), and \b won't match between
 // two word characters like "e" and "_" — the leading separator is anchor enough.
-const VARIANT_MARKER = /[._-](?:dvd|hd|sd|adaptive|playlist|master|thumbgrid|original|subtitles)/i
+const VARIANT_MARKER = /[._-](?:dvd|hd|sd|adaptive|playlist|master|thumbgrid|original|subtitles|\d{3,4}p|\d{3,4}x\d{3,4}|\d{3,5}k(?:bps)?)/i
 
 function mediaGroupKey(url: string): string {
   try {
@@ -98,18 +103,51 @@ interface MediaCandidate {
   isStreaming: boolean
 }
 
-function pickBestPerGroup<T extends MediaCandidate>(candidates: T[]): T[] {
-  const bestByGroup = new Map<string, T>()
+function variantScore(candidate: MediaCandidate): number {
+  const lower = candidate.url.toLowerCase()
+  const quality =
+    Number(/(?:^|[._/?=&-])(\d{3,4})p(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0) ||
+    Number(/(?:^|[._/?=&-])\d{3,4}x(\d{3,4})(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0) ||
+    Number(/(?:quality|height|resolution|res)[=_-](\d{3,4})/i.exec(lower)?.[1] ?? 0)
+  const original = /(?:^|[._-])(original|source|master)(?:[._-]|$)/i.test(lower) ? 100_000 : 0
+  // A direct file is the best recommendation for this product because it can
+  // actually be downloaded. Streaming-only options remain available as context.
+  return (candidate.isStreaming ? 0 : 1_000_000) + original + quality
+}
+
+function groupMediaCandidates<T extends MediaCandidate>(candidates: T[]): Array<T & { variants: T[] }> {
+  const grouped = new Map<string, T[]>()
   for (const candidate of candidates) {
     const key = mediaGroupKey(candidate.url)
-    const existing = bestByGroup.get(key)
-    // Prefer a direct playable file over a streaming manifest; otherwise keep
-    // whichever was discovered first.
-    if (!existing || (existing.isStreaming && !candidate.isStreaming)) {
-      bestByGroup.set(key, candidate)
-    }
+    const existing = grouped.get(key)
+    if (existing?.some((item) => item.url === candidate.url)) continue
+    if (existing) existing.push(candidate)
+    else grouped.set(key, [candidate])
   }
-  return [...bestByGroup.values()]
+  return [...grouped.values()].map((variants) => {
+    const recommended = [...variants].sort((a, b) => variantScore(b) - variantScore(a))[0]
+    return { ...recommended, variants }
+  })
+}
+
+function mediaVariants(
+  recommendedUrl: string,
+  candidates: MediaCandidate[] | undefined,
+  fallbackType: string,
+): MediaVariant[] {
+  return (candidates ?? [{ url: recommendedUrl, isStreaming: false }]).map((candidate) => {
+    const fileType = candidate.isStreaming ? "HLS" : fileTypeFromUrl(candidate.url, fallbackType)
+    return {
+      url: candidate.url,
+      name: candidate.isStreaming
+        ? nameFromUrl(candidate.url)
+        : ensureFileExtension(nameFromUrl(candidate.url), fileType),
+      fileType,
+      size: "—",
+      wasStreaming: candidate.isStreaming,
+      recommended: candidate.url === recommendedUrl,
+    }
+  })
 }
 
 function familyFromFontFileName(url: string): string {
@@ -210,7 +248,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
   const pendingMedia: Promise<void>[] = []
 
   async function emitVideo(raw: RawVideo) {
-    if (seenVideoUrls.has(raw.url) || seenVideoUrls.size >= 24) return
+    if (seenVideoUrls.has(raw.url) || seenVideoUrls.size >= MAX_MEDIA_ASSETS_PER_KIND) return
     seenVideoUrls.add(raw.url)
     const index = videoIndex++
 
@@ -236,32 +274,42 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       drmProtected: raw.isStreaming ? drm : undefined,
       fileType,
       size: raw.isStreaming ? "—" : formatBytes(meta?.contentLength ?? null),
+      variants: mediaVariants(raw.url, raw.variants, "MP4"),
       credit,
     }
     send({ type: "asset", asset })
   }
 
   async function emitAudio(raw: RawAudio) {
-    if (seenAudioUrls.has(raw.url) || seenAudioUrls.size >= 24) return
+    if (seenAudioUrls.has(raw.url) || seenAudioUrls.size >= MAX_MEDIA_ASSETS_PER_KIND) return
     seenAudioUrls.add(raw.url)
     const index = audioIndex++
 
-    const meta = await headSafely(raw.url)
-    const fileType = fileTypeFromUrl(raw.url, "AUDIO")
+    let drm = false
+    const meta = raw.isStreaming ? null : await headSafely(raw.url)
+    if (raw.isStreaming && streamingDrmChecks < 6) {
+      streamingDrmChecks++
+      const text = await fetchTextSafely(raw.url, { timeoutMs: 5000, maxBytes: 50_000 })
+      drm = text ? /#EXT-X-KEY[^\n]*METHOD=(?!NONE)/i.test(text) : false
+    }
+    const fileType = raw.isStreaming ? "HLS" : fileTypeFromUrl(raw.url, "AUDIO")
     const asset: AudioAsset = {
       id: `audio-${index}`,
       category: "audio",
-      name: ensureFileExtension(nameFromUrl(raw.url), fileType),
+      name: raw.isStreaming ? nameFromUrl(raw.url) : ensureFileExtension(nameFromUrl(raw.url), fileType),
       url: raw.url,
       fileType,
-      size: formatBytes(meta?.contentLength ?? null),
+      size: raw.isStreaming ? "—" : formatBytes(meta?.contentLength ?? null),
+      wasStreaming: raw.isStreaming,
+      drmProtected: raw.isStreaming ? drm : undefined,
+      variants: mediaVariants(raw.url, raw.variants, "AUDIO"),
       credit,
     }
     send({ type: "asset", asset })
   }
 
   async function emitModel(raw: RawModel3D) {
-    if (seenModelUrls.has(raw.url) || seenModelUrls.size >= 24) return
+    if (seenModelUrls.has(raw.url) || seenModelUrls.size >= MAX_MEDIA_ASSETS_PER_KIND) return
     seenModelUrls.add(raw.url)
     const index = modelIndex++
 
@@ -281,7 +329,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
 
   // Buffered rather than emitted immediately: adaptive-stream CDNs surface many
   // URLs (qualities, playlists, direct file) per real video/audio track, so
-  // they need to be seen in full and deduped (see pickBestPerGroup) before
+  // they need to be seen in full and grouped before
   // going out.
   const networkVideoCandidates: RawVideo[] = []
   const networkAudioCandidates: MediaCandidate[] = []
@@ -305,7 +353,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
   // the same buffer/dedup pass rather than being emitted immediately.
   networkVideoCandidates.push(...extractVideos($, html, pageUrlString))
   networkAudioCandidates.push(
-    ...extractAudio($, html, pageUrlString).map((audio) => ({ url: audio.url, isStreaming: false }))
+    ...extractAudio($, html, pageUrlString)
   )
   for (const model of extractModels($, html, pageUrlString)) pendingMedia.push(emitModel(model))
 
@@ -439,14 +487,14 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
   send({ type: "category", category: "colors", assets: colorAssets })
   send({ type: "category-done", category: "colors" })
 
-  // wait on the browser session, then dedupe its raw video/audio hits down to
-  // one representative per real asset before emitting
+  // Keep every network rendition under one card and recommend the strongest
+  // downloadable candidate instead of showing a wall of duplicates.
   await networkMediaDone
-  for (const video of pickBestPerGroup(networkVideoCandidates)) {
+  for (const video of groupMediaCandidates(networkVideoCandidates)) {
     pendingMedia.push(emitVideo(video))
   }
-  for (const audio of pickBestPerGroup(networkAudioCandidates)) {
-    pendingMedia.push(emitAudio({ url: audio.url }))
+  for (const audio of groupMediaCandidates(networkAudioCandidates)) {
+    pendingMedia.push(emitAudio(audio))
   }
   await Promise.all(pendingMedia)
 

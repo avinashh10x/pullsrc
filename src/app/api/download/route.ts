@@ -45,6 +45,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const target = searchParams.get("url")
   const suggestedName = searchParams.get("name")
+  const referer = searchParams.get("referer")
 
   if (!target) {
     return new Response("Missing url", { status: 400 })
@@ -60,9 +61,21 @@ export async function GET(request: Request) {
     throw error
   }
 
+  let sourcePage: URL | null = null
+  if (referer) {
+    try {
+      sourcePage = assertSafePublicUrl(referer)
+    } catch {
+      // A bad optional referer should never prevent a direct asset download.
+    }
+  }
+
   let upstream: Response
   try {
-    upstream = await fetchWithTimeout(assetUrl.toString(), { timeoutMs: 15000 })
+    upstream = await fetchWithTimeout(assetUrl.toString(), {
+      timeoutMs: 15000,
+      headers: sourcePage ? { referer: sourcePage.toString() } : undefined,
+    })
   } catch {
     return new Response("Couldn't fetch that asset", { status: 502 })
   }

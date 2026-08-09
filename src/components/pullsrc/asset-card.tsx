@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useId, useRef, useState } from "react"
-import { Copy, Download, ThumbsDown, ThumbsUp } from "lucide-react"
+import { ChevronDown, Copy, Download, ThumbsDown, ThumbsUp } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -16,8 +16,8 @@ import type { Asset } from "@/lib/pullsrc/types"
 const PREVIEW_ASPECT = "aspect-[4/3]"
 const PREVIEW_SHAPE = "rounded-xl"
 
-function downloadHref(url: string, name: string) {
-  return `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`
+function downloadHref(url: string, name: string, referer: string) {
+  return `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&referer=${encodeURIComponent(referer)}`
 }
 
 function copyToClipboard(value: string, message: string) {
@@ -39,12 +39,14 @@ export function AssetCard({
   onLogoVote?: (vote: "up" | "down") => void
 }) {
   const isColor = asset.category === "colors"
-  const isVideo = asset.category === "video"
   const isLogo = asset.category === "logo"
-  const isDrm = isVideo && asset.drmProtected
-  const isStreamingOnly = isVideo && asset.wasStreaming
+  const isDrm =
+    (asset.category === "video" || asset.category === "audio") && asset.drmProtected
+  const isStreamingOnly =
+    (asset.category === "video" || asset.category === "audio") && asset.wasStreaming
   const selectable = !isDrm && !isStreamingOnly
   const hasUrl = "url" in asset
+  const variants = "variants" in asset ? asset.variants ?? [] : []
 
   const metaParts = [asset.fileType, asset.size !== "—" ? asset.size : null].filter(Boolean)
   if (asset.category === "fonts") {
@@ -124,11 +126,44 @@ export function AssetCard({
               size="icon-xs"
               aria-label={`Download ${asset.name}`}
               render={
-                <a href={downloadHref(asset.url, asset.name)} download={asset.name} />
+                <a href={downloadHref(asset.url, asset.name, asset.credit.originalUrl)} download={asset.name} />
               }
             >
               <Download />
             </Button>
+          )}
+          {variants.length > 1 && (
+            <details className="relative">
+              <summary
+                aria-label={`Show ${variants.length} download variants for ${asset.name}`}
+                className="flex size-6 cursor-pointer list-none items-center justify-center rounded-[min(var(--radius-md),10px)] hover:bg-muted [&::-webkit-details-marker]:hidden"
+              >
+                <ChevronDown className="size-3" />
+              </summary>
+              <div className="absolute top-7 right-0 z-20 w-56 rounded-lg border border-border bg-background p-1.5 shadow-lg">
+                <p className="px-2 py-1 text-xs text-muted-foreground">Download variants</p>
+                {variants.map((variant) =>
+                  variant.wasStreaming || variant.drmProtected ? (
+                    <p key={variant.url} className="flex justify-between gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                      <span className="truncate">{variant.name}</span>
+                      <span>{variant.drmProtected ? "DRM" : "stream"}</span>
+                    </p>
+                  ) : (
+                    <a
+                      key={variant.url}
+                      href={downloadHref(variant.url, variant.name, asset.credit.originalUrl)}
+                      download={variant.name}
+                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
+                    >
+                      <span className="truncate">{variant.name}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {variant.recommended ? "Best" : variant.fileType}
+                      </span>
+                    </a>
+                  )
+                )}
+              </div>
+            </details>
           )}
         </div>
       </CardContent>
@@ -164,6 +199,13 @@ function AssetPreview({ asset }: { asset: Asset }) {
   }
 
   if (asset.category === "audio") {
+    if (asset.wasStreaming) {
+      return (
+        <div className={`flex ${PREVIEW_ASPECT} ${PREVIEW_SHAPE} w-full items-center justify-center bg-muted`}>
+          <CategoryIcon category="audio" className="size-8 text-muted-foreground" />
+        </div>
+      )
+    }
     return (
       <div className={`flex ${PREVIEW_ASPECT} ${PREVIEW_SHAPE} w-full flex-col items-center justify-center gap-3 bg-muted px-4`}>
         <CategoryIcon category="audio" className="size-8 text-muted-foreground" />

@@ -3,15 +3,15 @@ import JSZip from "jszip"
 import { buildCreditSheet } from "./credit"
 import type { Asset, ScanResult } from "./types"
 
-function downloadProxyUrl(url: string, name: string) {
-  return `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`
+function downloadProxyUrl(url: string, name: string, referer: string) {
+  return `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&referer=${encodeURIComponent(referer)}`
 }
 
 function hasDownloadableUrl(
   asset: Asset
 ): asset is Asset & { url: string } {
   if (asset.category === "colors") return false
-  if (asset.category === "video" && asset.wasStreaming) return false
+  if ((asset.category === "video" || asset.category === "audio") && asset.wasStreaming) return false
   return "url" in asset
 }
 
@@ -25,7 +25,7 @@ export async function buildExportZip(
   await Promise.all(
     downloadable.map(async (asset) => {
       try {
-        const res = await fetch(downloadProxyUrl(asset.url, asset.name))
+        const res = await fetch(downloadProxyUrl(asset.url, asset.name, result.pageUrl))
         if (!res.ok) return
         const blob = await res.blob()
         zip.folder(asset.category)?.file(asset.name, blob)

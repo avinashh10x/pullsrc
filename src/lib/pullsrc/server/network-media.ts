@@ -6,16 +6,16 @@ export interface RawNetworkMedia {
   isStreaming: boolean;
 }
 
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)(?:\?|#|$)/i;
-const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|flac|aac|weba)(?:\?|#|$)/i;
-const MODEL_EXT = /\.(glb|gltf|usdz|obj|fbx)(?:\?|#|$)/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv|avi|mkv|3gp)(?:\?|#|$)/i;
+const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|flac|aac|weba|opus|aiff)(?:\?|#|$)/i;
+const MODEL_EXT = /\.(glb|gltf|usdz|obj|fbx|dae|stl|ply|3mf|vrm|x3d|wrl|splat)(?:\?|#|$)/i;
 const MANIFEST_EXT = /\.(m3u8|mpd)(?:\?|#|$)/i;
 // HLS/DASH segment/fragment files — chunks of a stream, not standalone videos
 const SEGMENT_EXT = /\.(ts|m4s)(?:\?|#|$)/i;
 // Adaptive-stream renditions split the audio track into its own file/manifest
 // (e.g. foo_dvd.audio.m3u8) — that's audio, not a video, even though it sits
 // right next to the real video variants under the same content-type/manifest rules.
-const AUDIO_ONLY_HINT = /[._-]audio\.(m3u8|mpd|mp4|m4a|aac)(?:\?|#|$)/i;
+const AUDIO_ONLY_HINT = /(?:[._-]audio|audio[._-]|\/audio\/).*(?:m3u8|mpd|mp4|m4a|aac|opus)(?:\?|#|$)/i;
 
 function classify(
   url: string,
@@ -33,7 +33,10 @@ function classify(
     return { kind: "video", isStreaming: false };
   if (AUDIO_EXT.test(url) || contentType.startsWith("audio/"))
     return { kind: "audio", isStreaming: false };
-  if (MODEL_EXT.test(url) || /model\/(gltf|obj)/i.test(contentType))
+  if (
+    MODEL_EXT.test(url) ||
+    /(?:model\/|application\/(?:gltf|vnd\.google\.earth\.kml|vnd\.ms-3mf|x-3d|x-3ds|x-tgif))/i.test(contentType)
+  )
     return { kind: "model3d", isStreaming: false };
 
   return null;
@@ -104,6 +107,32 @@ async function scrollThroughPage(page: Page) {
   await page.waitForTimeout(300);
 }
 
+async function activateMediaElements(page: Page) {
+  await page
+    .evaluate(() => {
+      for (const element of document.querySelectorAll("video, audio")) {
+        const media = element as HTMLMediaElement;
+        media.muted = true;
+        void media.play().catch(() => {});
+      }
+    })
+    .catch(() => {});
+  await page.waitForTimeout(800);
+}
+
+async function collectPerformanceMedia(page: Page, onMedia: (media: RawNetworkMedia) => void, seen: Set<string>) {
+  const urls = await page
+    .evaluate(() => performance.getEntriesByType("resource").map((entry) => entry.name))
+    .catch(() => [] as string[]);
+  for (const url of urls) {
+    if (seen.has(url)) continue;
+    const classified = classify(url, "");
+    if (!classified) continue;
+    seen.add(url);
+    onMedia({ url, ...classified });
+  }
+}
+
 // Loads the page in headless Chromium and watches network responses for
 // video/audio/3D-model files that never show up as a static tag in the HTML.
 // `onMedia` fires the instant each asset is detected, so callers streaming
@@ -128,7 +157,11 @@ export async function captureNetworkMedia(
 
   try {
     browser = await chromiumModule.chromium.launch({ args: ["--no-sandbox"] });
-    const context = await browser.newContext({ userAgent: USER_AGENT });
+    const context = await browser.newContext({
+      userAgent: USER_AGENT,
+      viewport: { width: 1440, height: 1000 },
+      locale: "en-US",
+    });
     const page = await context.newPage();
 
     page.on("response", (response) => {
@@ -150,8 +183,11 @@ export async function captureNetworkMedia(
       .catch(() => {});
     await page.waitForTimeout(1000);
 
+    await activateMediaElements(page);
     await scrollThroughPage(page);
     await clickThroughRevealTriggers(page);
+    await activateMediaElements(page);
+    await collectPerformanceMedia(page, onMedia, seen);
   } catch {
     // best-effort — static extraction still runs regardless
   } finally {
