@@ -1,4 +1,4 @@
-import * as cheerio from "cheerio"
+import * as cheerio from "cheerio";
 
 import {
   assertSafePublicUrl,
@@ -8,7 +8,7 @@ import {
   headSafely,
   mapWithConcurrency,
   UnsafeUrlError,
-} from "@/lib/pullsrc/server/http"
+} from "@/lib/pullsrc/server/http";
 import {
   extractAudio,
   extractIcons,
@@ -26,8 +26,11 @@ import {
   type RawFont,
   type RawModel3D,
   type RawVideo,
-} from "@/lib/pullsrc/server/extract"
-import { captureNetworkMedia, type RawNetworkMedia } from "@/lib/pullsrc/server/network-media"
+} from "@/lib/pullsrc/server/extract";
+import {
+  captureNetworkMedia,
+  type RawNetworkMedia,
+} from "@/lib/pullsrc/server/network-media";
 import type {
   AudioAsset,
   ColorAsset,
@@ -40,37 +43,73 @@ import type {
   ScanError,
   ScanStreamEvent,
   VideoAsset,
-} from "@/lib/pullsrc/types"
+} from "@/lib/pullsrc/types";
 
-export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic";
 
 // A page can legitimately have a gallery, soundtrack, or model library. Keep
 // a generous guardrail so one pathological page cannot exhaust a request.
-const MAX_MEDIA_ASSETS_PER_KIND = 100
+const MAX_MEDIA_ASSETS_PER_KIND = 100;
 
 function fileTypeFromUrl(url: string, fallback: string): string {
-  const match = /\.([a-z0-9]{2,5})(?:\?|#|$)/i.exec(url)
-  return match ? match[1].toUpperCase() : fallback
+  const match = /\.([a-z0-9]{2,5})(?:\?|#|$)/i.exec(url);
+  return match ? match[1].toUpperCase() : fallback;
+}
+
+// Extract file type from Content-Type header when URL has no extension
+function fileTypeFromContentType(
+  contentType: string | null | undefined,
+): string | null {
+  if (!contentType) return null;
+  const type = contentType.split("/")[1]?.split(";")[0]?.trim().toUpperCase();
+  if (!type) return null;
+  // Map common MIME types to file extensions
+  const mimeMap: Record<string, string> = {
+    mp4: "MP4",
+    webm: "WEBM",
+    quicktime: "MOV",
+    "x-msvideo": "AVI",
+    "x-matroska": "MKV",
+    ogg: "OGG",
+    "3gpp": "3GP",
+    mpeg: "MPEG",
+    "x-ms-wmv": "WMV",
+    "x-flv": "FLV",
+    "x-m4v": "M4V",
+    "vnd.rn-realmedia": "RM",
+    "x-mpegs": "MPEG",
+    mpeg3: "MP3",
+    wav: "WAV",
+    "x-wav": "WAV",
+    flac: "FLAC",
+    aac: "AAC",
+    "x-m4a": "M4A",
+    "x-caf": "CAF",
+    opus: "OPUS",
+    "x-opus+ogg": "OPUS",
+    "x-apple-protected-mpeg-4-audio": "M4P",
+  };
+  return mimeMap[type.toLowerCase()] || type;
 }
 
 function nameFromUrl(url: string): string {
   try {
-    const { pathname } = new URL(url)
-    const last = pathname.split("/").filter(Boolean).pop()
-    return last ? decodeURIComponent(last) : url
+    const { pathname } = new URL(url);
+    const last = pathname.split("/").filter(Boolean).pop();
+    return last ? decodeURIComponent(last) : url;
   } catch {
-    return url
+    return url;
   }
 }
 
 // Image-optimizer URLs (/_next/image?url=...) have no real extension, so
 // nameFromUrl alone can yield a bare "image" — append the detected fileType.
 function ensureFileExtension(name: string, fileType: string): string {
-  const ext = fileType.toLowerCase()
-  if (!/^[a-z0-9]{1,5}$/.test(ext)) return name
-  const match = /\.([a-z0-9]{1,5})$/i.exec(name)
-  if (match && match[1].toLowerCase() === ext) return name
-  return `${match ? name.slice(0, match.index) : name}.${ext}`
+  const ext = fileType.toLowerCase();
+  if (!/^[a-z0-9]{1,5}$/.test(ext)) return name;
+  const match = /\.([a-z0-9]{1,5})$/i.exec(name);
+  if (match && match[1].toLowerCase() === ext) return name;
+  return `${match ? name.slice(0, match.index) : name}.${ext}`;
 }
 
 // Adaptive-stream CDNs publish several files per video/audio track —
@@ -82,52 +121,63 @@ function ensureFileExtension(name: string, fileType: string): string {
 // No trailing \b: variant tags are often followed directly by more of the
 // same "word" (e.g. "adaptive_4", "adaptive_2-1"), and \b won't match between
 // two word characters like "e" and "_" — the leading separator is anchor enough.
-const VARIANT_MARKER = /[._-](?:dvd|hd|sd|adaptive|playlist|master|thumbgrid|original|subtitles|\d{3,4}p|\d{3,4}x\d{3,4}|\d{3,5}k(?:bps)?)/i
+const VARIANT_MARKER =
+  /[._-](?:dvd|hd|sd|adaptive|playlist|master|thumbgrid|original|subtitles|\d{3,4}p|\d{3,4}x\d{3,4}|\d{3,5}k(?:bps)?)/i;
 
 function mediaGroupKey(url: string): string {
   try {
-    const parsed = new URL(url)
-    const segments = parsed.pathname.split("/")
-    const filename = segments.pop() ?? ""
-    const stem = filename.replace(/\.[a-z0-9]+$/i, "")
-    const markerIndex = stem.search(VARIANT_MARKER)
-    const base = markerIndex >= 0 ? stem.slice(0, markerIndex) : stem
-    return `${parsed.origin}${segments.join("/")}/${base}`
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/");
+    const filename = segments.pop() ?? "";
+    const stem = filename.replace(/\.[a-z0-9]+$/i, "");
+    const markerIndex = stem.search(VARIANT_MARKER);
+    const base = markerIndex >= 0 ? stem.slice(0, markerIndex) : stem;
+    return `${parsed.origin}${segments.join("/")}/${base}`;
   } catch {
-    return url
+    return url;
   }
 }
 
 interface MediaCandidate {
-  url: string
-  isStreaming: boolean
+  url: string;
+  isStreaming: boolean;
 }
 
 function variantScore(candidate: MediaCandidate): number {
-  const lower = candidate.url.toLowerCase()
+  const lower = candidate.url.toLowerCase();
   const quality =
     Number(/(?:^|[._/?=&-])(\d{3,4})p(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0) ||
-    Number(/(?:^|[._/?=&-])\d{3,4}x(\d{3,4})(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0) ||
-    Number(/(?:quality|height|resolution|res)[=_-](\d{3,4})/i.exec(lower)?.[1] ?? 0)
-  const original = /(?:^|[._-])(original|source|master)(?:[._-]|$)/i.test(lower) ? 100_000 : 0
+    Number(
+      /(?:^|[._/?=&-])\d{3,4}x(\d{3,4})(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0,
+    ) ||
+    Number(
+      /(?:quality|height|resolution|res)[=_-](\d{3,4})/i.exec(lower)?.[1] ?? 0,
+    );
+  const original = /(?:^|[._-])(original|source|master)(?:[._-]|$)/i.test(lower)
+    ? 100_000
+    : 0;
   // A direct file is the best recommendation for this product because it can
   // actually be downloaded. Streaming-only options remain available as context.
-  return (candidate.isStreaming ? 0 : 1_000_000) + original + quality
+  return (candidate.isStreaming ? 0 : 1_000_000) + original + quality;
 }
 
-function groupMediaCandidates<T extends MediaCandidate>(candidates: T[]): Array<T & { variants: T[] }> {
-  const grouped = new Map<string, T[]>()
+function groupMediaCandidates<T extends MediaCandidate>(
+  candidates: T[],
+): Array<T & { variants: T[] }> {
+  const grouped = new Map<string, T[]>();
   for (const candidate of candidates) {
-    const key = mediaGroupKey(candidate.url)
-    const existing = grouped.get(key)
-    if (existing?.some((item) => item.url === candidate.url)) continue
-    if (existing) existing.push(candidate)
-    else grouped.set(key, [candidate])
+    const key = mediaGroupKey(candidate.url);
+    const existing = grouped.get(key);
+    if (existing?.some((item) => item.url === candidate.url)) continue;
+    if (existing) existing.push(candidate);
+    else grouped.set(key, [candidate]);
   }
   return [...grouped.values()].map((variants) => {
-    const recommended = [...variants].sort((a, b) => variantScore(b) - variantScore(a))[0]
-    return { ...recommended, variants }
-  })
+    const recommended = [...variants].sort(
+      (a, b) => variantScore(b) - variantScore(a),
+    )[0];
+    return { ...recommended, variants };
+  });
 }
 
 function mediaVariants(
@@ -135,24 +185,28 @@ function mediaVariants(
   candidates: MediaCandidate[] | undefined,
   fallbackType: string,
 ): MediaVariant[] {
-  return (candidates ?? [{ url: recommendedUrl, isStreaming: false }]).map((candidate) => {
-    const fileType = candidate.isStreaming ? "HLS" : fileTypeFromUrl(candidate.url, fallbackType)
-    return {
-      url: candidate.url,
-      name: candidate.isStreaming
-        ? nameFromUrl(candidate.url)
-        : ensureFileExtension(nameFromUrl(candidate.url), fileType),
-      fileType,
-      size: "—",
-      wasStreaming: candidate.isStreaming,
-      recommended: candidate.url === recommendedUrl,
-    }
-  })
+  return (candidates ?? [{ url: recommendedUrl, isStreaming: false }]).map(
+    (candidate) => {
+      const fileType = candidate.isStreaming
+        ? "HLS"
+        : fileTypeFromUrl(candidate.url, fallbackType);
+      return {
+        url: candidate.url,
+        name: candidate.isStreaming
+          ? nameFromUrl(candidate.url)
+          : ensureFileExtension(nameFromUrl(candidate.url), fileType),
+        fileType,
+        size: "—",
+        wasStreaming: candidate.isStreaming,
+        recommended: candidate.url === recommendedUrl,
+      };
+    },
+  );
 }
 
 function familyFromFontFileName(url: string): string {
-  const base = nameFromUrl(url).replace(/\.[a-z0-9]+$/i, "")
-  return base.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  const base = nameFromUrl(url).replace(/\.[a-z0-9]+$/i, "");
+  return base.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const WEIGHT_ORDER = [
@@ -167,108 +221,144 @@ const WEIGHT_ORDER = [
   "bold",
   "800",
   "900",
-]
+];
 
 function sortWeights(weights: string[]): string[] {
   return [...weights].sort(
-    (a, b) => WEIGHT_ORDER.indexOf(a.toLowerCase()) - WEIGHT_ORDER.indexOf(b.toLowerCase())
-  )
+    (a, b) =>
+      WEIGHT_ORDER.indexOf(a.toLowerCase()) -
+      WEIGHT_ORDER.indexOf(b.toLowerCase()),
+  );
 }
 
 function ndjson(event: ScanStreamEvent): string {
-  return JSON.stringify(event) + "\n"
+  return JSON.stringify(event) + "\n";
 }
 
 // Every response is an NDJSON stream, even validation failures, so the
 // client only ever has one code path instead of branching on response shape.
 function ndjsonErrorResponse(error: ScanError): Response {
-  const body = ndjson({ type: "error", error }) + ndjson({ type: "done" })
+  const body = ndjson({ type: "error", error }) + ndjson({ type: "done" });
   return new Response(body, {
     headers: { "content-type": "application/x-ndjson; charset=utf-8" },
-  })
+  });
 }
 
 async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
-  const pageUrlString = pageUrl.toString()
+  const pageUrlString = pageUrl.toString();
 
-  let html: string
+  let html: string;
   try {
     const res = await fetchWithTimeout(pageUrlString, {
       timeoutMs: 10000,
       headers: { accept: "text/html,application/xhtml+xml" },
-    })
+    });
 
-    if (res.status === 401 || res.status === 403 || res.status === 451 || res.status === 429) {
+    if (
+      res.status === 401 ||
+      res.status === 403 ||
+      res.status === 451 ||
+      res.status === 429
+    ) {
       send({
         type: "error",
         error: {
           kind: "blocked",
           message: `The page responded with ${res.status} — it may require a login, sit behind a paywall, or be blocking automated scans.`,
         },
-      })
-      send({ type: "done" })
-      return
+      });
+      send({ type: "done" });
+      return;
     }
 
     if (!res.ok) {
-      send({ type: "error", error: { kind: "broken", message: `The page responded with ${res.status}.` } })
-      send({ type: "done" })
-      return
+      send({
+        type: "error",
+        error: {
+          kind: "broken",
+          message: `The page responded with ${res.status}.`,
+        },
+      });
+      send({ type: "done" });
+      return;
     }
 
-    html = await res.text()
+    html = await res.text();
   } catch {
-    send({ type: "error", error: { kind: "broken", message: "We couldn't reach that page." } })
-    send({ type: "done" })
-    return
+    send({
+      type: "error",
+      error: { kind: "broken", message: "We couldn't reach that page." },
+    });
+    send({ type: "done" });
+    return;
   }
 
-  const $ = cheerio.load(html)
-  const title = extractTitle($) || pageUrl.hostname
-  const scanDate = new Date().toISOString().slice(0, 10)
+  const $ = cheerio.load(html);
+  const title = extractTitle($) || pageUrl.hostname;
+  const scanDate = new Date().toISOString().slice(0, 10);
 
-  send({ type: "meta", pageUrl: pageUrlString, pageTitle: title, sourceDomain: pageUrl.hostname, scanDate })
+  send({
+    type: "meta",
+    pageUrl: pageUrlString,
+    pageTitle: title,
+    sourceDomain: pageUrl.hostname,
+    scanDate,
+  });
 
   const credit: CreditInfo = {
     sourceDomain: pageUrl.hostname,
     pageTitle: title,
     originalUrl: pageUrlString,
     scanDate,
-  }
+  };
 
   // --- video / audio / 3d models — kicked off first since the headless
   // browser pass is the slow part; everything below runs concurrently with it
-  const seenVideoUrls = new Set<string>()
-  const seenAudioUrls = new Set<string>()
-  const seenModelUrls = new Set<string>()
-  let videoIndex = 0
-  let audioIndex = 0
-  let modelIndex = 0
-  let streamingDrmChecks = 0
-  const pendingMedia: Promise<void>[] = []
+  const seenVideoUrls = new Set<string>();
+  const seenAudioUrls = new Set<string>();
+  const seenModelUrls = new Set<string>();
+  let videoIndex = 0;
+  let audioIndex = 0;
+  let modelIndex = 0;
+  let streamingDrmChecks = 0;
+  const pendingMedia: Promise<void>[] = [];
 
   async function emitVideo(raw: RawVideo) {
-    if (seenVideoUrls.has(raw.url) || seenVideoUrls.size >= MAX_MEDIA_ASSETS_PER_KIND) return
-    seenVideoUrls.add(raw.url)
-    const index = videoIndex++
+    if (
+      seenVideoUrls.has(raw.url) ||
+      seenVideoUrls.size >= MAX_MEDIA_ASSETS_PER_KIND
+    )
+      return;
+    seenVideoUrls.add(raw.url);
+    const index = videoIndex++;
 
-    let drm = false
-    let meta: Awaited<ReturnType<typeof headSafely>> = null
+    let drm = false;
+    let meta: Awaited<ReturnType<typeof headSafely>> = null;
     if (raw.isStreaming) {
       if (streamingDrmChecks < 6) {
-        streamingDrmChecks++
-        const text = await fetchTextSafely(raw.url, { timeoutMs: 5000, maxBytes: 50_000 })
-        drm = text ? /#EXT-X-KEY[^\n]*METHOD=(?!NONE)/i.test(text) : false
+        streamingDrmChecks++;
+        const text = await fetchTextSafely(raw.url, {
+          timeoutMs: 5000,
+          maxBytes: 50_000,
+        });
+        drm = text ? /#EXT-X-KEY[^\n]*METHOD=(?!NONE)/i.test(text) : false;
       }
     } else {
-      meta = await headSafely(raw.url)
+      meta = await headSafely(raw.url);
     }
 
-    const fileType = raw.isStreaming ? "HLS" : fileTypeFromUrl(raw.url, "MP4")
+    // Extract file type from URL extension first, then Content-Type if no extension
+    const urlExtension = fileTypeFromUrl(raw.url, "");
+    const fileType = raw.isStreaming
+      ? "HLS"
+      : urlExtension || fileTypeFromContentType(meta?.contentType) || "MP4";
+
     const asset: VideoAsset = {
       id: `video-${index}`,
       category: "video",
-      name: raw.isStreaming ? nameFromUrl(raw.url) : ensureFileExtension(nameFromUrl(raw.url), fileType),
+      name: raw.isStreaming
+        ? nameFromUrl(raw.url)
+        : ensureFileExtension(nameFromUrl(raw.url), fileType),
       url: raw.url,
       wasStreaming: raw.isStreaming,
       drmProtected: raw.isStreaming ? drm : undefined,
@@ -276,45 +366,69 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       size: raw.isStreaming ? "—" : formatBytes(meta?.contentLength ?? null),
       variants: mediaVariants(raw.url, raw.variants, "MP4"),
       credit,
-    }
-    send({ type: "asset", asset })
+    };
+    send({ type: "asset", asset });
   }
 
   async function emitAudio(raw: RawAudio) {
-    if (seenAudioUrls.has(raw.url) || seenAudioUrls.size >= MAX_MEDIA_ASSETS_PER_KIND) return
-    seenAudioUrls.add(raw.url)
-    const index = audioIndex++
+    if (
+      seenAudioUrls.has(raw.url) ||
+      seenAudioUrls.size >= MAX_MEDIA_ASSETS_PER_KIND
+    )
+      return;
+    seenAudioUrls.add(raw.url);
+    const index = audioIndex++;
 
-    let drm = false
-    const meta = raw.isStreaming ? null : await headSafely(raw.url)
+    let drm = false;
+    const meta = raw.isStreaming ? null : await headSafely(raw.url);
     if (raw.isStreaming && streamingDrmChecks < 6) {
-      streamingDrmChecks++
-      const text = await fetchTextSafely(raw.url, { timeoutMs: 5000, maxBytes: 50_000 })
-      drm = text ? /#EXT-X-KEY[^\n]*METHOD=(?!NONE)/i.test(text) : false
+      streamingDrmChecks++;
+      const text = await fetchTextSafely(raw.url, {
+        timeoutMs: 5000,
+        maxBytes: 50_000,
+      });
+      drm = text ? /#EXT-X-KEY[^\n]*METHOD=(?!NONE)/i.test(text) : false;
     }
-    const fileType = raw.isStreaming ? "HLS" : fileTypeFromUrl(raw.url, "AUDIO")
+
+    // Extract file type from URL extension first, then Content-Type if no extension
+    const urlExtension = fileTypeFromUrl(raw.url, "");
+    const fileType = raw.isStreaming
+      ? "HLS"
+      : urlExtension || fileTypeFromContentType(meta?.contentType) || "MP3";
+
     const asset: AudioAsset = {
       id: `audio-${index}`,
       category: "audio",
-      name: raw.isStreaming ? nameFromUrl(raw.url) : ensureFileExtension(nameFromUrl(raw.url), fileType),
+      name: raw.isStreaming
+        ? nameFromUrl(raw.url)
+        : ensureFileExtension(nameFromUrl(raw.url), fileType),
       url: raw.url,
       fileType,
       size: raw.isStreaming ? "—" : formatBytes(meta?.contentLength ?? null),
       wasStreaming: raw.isStreaming,
       drmProtected: raw.isStreaming ? drm : undefined,
-      variants: mediaVariants(raw.url, raw.variants, "AUDIO"),
+      variants: mediaVariants(raw.url, raw.variants, "MP3"),
       credit,
-    }
-    send({ type: "asset", asset })
+    };
+    send({ type: "asset", asset });
   }
 
   async function emitModel(raw: RawModel3D) {
-    if (seenModelUrls.has(raw.url) || seenModelUrls.size >= MAX_MEDIA_ASSETS_PER_KIND) return
-    seenModelUrls.add(raw.url)
-    const index = modelIndex++
+    if (
+      seenModelUrls.has(raw.url) ||
+      seenModelUrls.size >= MAX_MEDIA_ASSETS_PER_KIND
+    )
+      return;
+    seenModelUrls.add(raw.url);
+    const index = modelIndex++;
 
-    const meta = await headSafely(raw.url)
-    const fileType = fileTypeFromUrl(raw.url, "GLB")
+    const meta = await headSafely(raw.url);
+
+    // Extract file type from URL extension first, then Content-Type if no extension
+    const urlExtension = fileTypeFromUrl(raw.url, "");
+    const fileType =
+      urlExtension || fileTypeFromContentType(meta?.contentType) || "GLB";
+
     const asset: Model3DAsset = {
       id: `model3d-${index}`,
       category: "model3d",
@@ -323,71 +437,80 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       fileType,
       size: formatBytes(meta?.contentLength ?? null),
       credit,
-    }
-    send({ type: "asset", asset })
+    };
+    send({ type: "asset", asset });
   }
 
   // Buffered rather than emitted immediately: adaptive-stream CDNs surface many
   // URLs (qualities, playlists, direct file) per real video/audio track, so
   // they need to be seen in full and grouped before
   // going out.
-  const networkVideoCandidates: RawVideo[] = []
-  const networkAudioCandidates: MediaCandidate[] = []
+  const networkVideoCandidates: RawVideo[] = [];
+  const networkAudioCandidates: MediaCandidate[] = [];
 
   function onNetworkMedia(media: RawNetworkMedia) {
     if (media.kind === "video") {
-      networkVideoCandidates.push({ url: media.url, isStreaming: media.isStreaming })
-      return
+      networkVideoCandidates.push({
+        url: media.url,
+        isStreaming: media.isStreaming,
+      });
+      return;
     }
     if (media.kind === "audio") {
-      networkAudioCandidates.push({ url: media.url, isStreaming: media.isStreaming })
-      return
+      networkAudioCandidates.push({
+        url: media.url,
+        isStreaming: media.isStreaming,
+      });
+      return;
     }
-    pendingMedia.push(emitModel({ url: media.url }))
+    pendingMedia.push(emitModel({ url: media.url }));
   }
 
-  const networkMediaDone = captureNetworkMedia(pageUrlString, onNetworkMedia)
+  const networkMediaDone = captureNetworkMedia(pageUrlString, onNetworkMedia);
 
   // Static extraction can find the same adaptive-stream variants the network
   // capture does (e.g. player config JSON inlined in the page), so these feed
   // the same buffer/dedup pass rather than being emitted immediately.
-  networkVideoCandidates.push(...extractVideos($, html, pageUrlString))
-  networkAudioCandidates.push(
-    ...extractAudio($, html, pageUrlString)
-  )
-  for (const model of extractModels($, html, pageUrlString)) pendingMedia.push(emitModel(model))
+  networkVideoCandidates.push(...extractVideos($, html, pageUrlString));
+  networkAudioCandidates.push(...extractAudio($, html, pageUrlString));
+  for (const model of extractModels($, html, pageUrlString))
+    pendingMedia.push(emitModel(model));
 
   // --- images + logo candidate ---------------------------------------------
-  const ogImage = extractOgImage($, pageUrlString)
-  const scannedImages = extractImages($, pageUrlString)
+  const ogImage = extractOgImage($, pageUrlString);
+  const scannedImages = extractImages($, pageUrlString);
   // og:image is often hosted elsewhere and never appears as an <img> tag, so
   // it's merged in explicitly, prepended so it survives the later 24-image cap.
   const rawImages =
     ogImage && !scannedImages.some((img) => img.url === ogImage.url)
       ? [ogImage, ...scannedImages]
-      : scannedImages
-  const rawIcons = extractIcons($, pageUrlString)
+      : scannedImages;
+  const rawIcons = extractIcons($, pageUrlString);
 
   const logoCandidate =
     rawImages.find((img) => img.looksLikeLogo) ??
     (() => {
-      const appleIcon = rawIcons.find((icon) => /apple-touch-icon/i.test(icon))
-      return appleIcon ? { url: appleIcon, alt: "", looksLikeLogo: true } : null
-    })()
+      const appleIcon = rawIcons.find((icon) => /apple-touch-icon/i.test(icon));
+      return appleIcon
+        ? { url: appleIcon, alt: "", looksLikeLogo: true }
+        : null;
+    })();
 
-  const imagesWithoutLogo = rawImages.filter((img) => img.url !== logoCandidate?.url)
-  const boundedImages = imagesWithoutLogo.slice(0, 24)
+  const imagesWithoutLogo = rawImages.filter(
+    (img) => img.url !== logoCandidate?.url,
+  );
+  const boundedImages = imagesWithoutLogo.slice(0, 24);
 
   const [imageMeta, logoMeta] = await Promise.all([
     mapWithConcurrency(boundedImages, 6, (img) => headSafely(img.url)),
     logoCandidate ? headSafely(logoCandidate.url) : Promise.resolve(null),
-  ])
+  ]);
 
   const imageAssets: ImageAsset[] = boundedImages.map((img, index) => {
     const fileType = fileTypeFromUrl(
       img.url,
-      imageMeta[index]?.contentType?.split("/")[1]?.toUpperCase() ?? "IMG"
-    )
+      imageMeta[index]?.contentType?.split("/")[1]?.toUpperCase() ?? "IMG",
+    );
     return {
       id: `image-${index}`,
       category: "images",
@@ -396,16 +519,16 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       fileType,
       size: formatBytes(imageMeta[index]?.contentLength ?? null),
       credit,
-    }
-  })
+    };
+  });
 
   const logoAssets: LogoAsset[] = logoCandidate
     ? [
         (() => {
           const fileType = fileTypeFromUrl(
             logoCandidate.url,
-            logoMeta?.contentType?.split("/")[1]?.toUpperCase() ?? "IMG"
-          )
+            logoMeta?.contentType?.split("/")[1]?.toUpperCase() ?? "IMG",
+          );
           return {
             id: "logo-0",
             category: "logo" as const,
@@ -415,65 +538,78 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
             size: formatBytes(logoMeta?.contentLength ?? null),
             confidence: "likely" as const,
             credit,
-          }
+          };
         })(),
       ]
-    : []
+    : [];
 
-  send({ type: "category", category: "logo", assets: logoAssets })
-  send({ type: "category-done", category: "logo" })
-  send({ type: "category", category: "images", assets: imageAssets })
-  send({ type: "category-done", category: "images" })
+  send({ type: "category", category: "logo", assets: logoAssets });
+  send({ type: "category-done", category: "logo" });
+  send({ type: "category", category: "images", assets: imageAssets });
+  send({ type: "category-done", category: "images" });
 
   // --- fonts + colors from stylesheets ------------------------------------
-  const stylesheetUrls = extractStylesheetUrls($, pageUrlString)
-  const inlineCss = extractInlineStyleText($)
-  const preloadFontUrls = extractPreloadFonts($, pageUrlString)
+  const stylesheetUrls = extractStylesheetUrls($, pageUrlString);
+  const inlineCss = extractInlineStyleText($);
+  const preloadFontUrls = extractPreloadFonts($, pageUrlString);
 
   const stylesheetTexts = await mapWithConcurrency(stylesheetUrls, 4, (url) =>
-    fetchTextSafely(url, { timeoutMs: 6000, maxBytes: 400_000 })
-  )
+    fetchTextSafely(url, { timeoutMs: 6000, maxBytes: 400_000 }),
+  );
 
   const rawFontsFromCss: RawFont[] = stylesheetUrls.flatMap((url, index) => {
-    const text = stylesheetTexts[index]
-    return text ? parseFontFaces(text, url) : []
-  })
+    const text = stylesheetTexts[index];
+    return text ? parseFontFaces(text, url) : [];
+  });
 
   const rawFontsFromPreload: RawFont[] = preloadFontUrls.map((url) => ({
     fontFamily: familyFromFontFileName(url),
     weight: "—",
     url,
-  }))
+  }));
 
-  const fontsByFamily = new Map<string, { url: string; weights: Set<string> }>()
+  const fontsByFamily = new Map<
+    string,
+    { url: string; weights: Set<string> }
+  >();
   for (const font of [...rawFontsFromCss, ...rawFontsFromPreload]) {
-    const existing = fontsByFamily.get(font.fontFamily)
+    const existing = fontsByFamily.get(font.fontFamily);
     if (existing) {
-      existing.weights.add(font.weight)
+      existing.weights.add(font.weight);
     } else {
-      fontsByFamily.set(font.fontFamily, { url: font.url, weights: new Set([font.weight]) })
+      fontsByFamily.set(font.fontFamily, {
+        url: font.url,
+        weights: new Set([font.weight]),
+      });
     }
   }
 
-  const fontEntries = [...fontsByFamily.entries()].slice(0, 12)
-  const fontMeta = await mapWithConcurrency(fontEntries, 6, ([, info]) => headSafely(info.url))
+  const fontEntries = [...fontsByFamily.entries()].slice(0, 12);
+  const fontMeta = await mapWithConcurrency(fontEntries, 6, ([, info]) =>
+    headSafely(info.url),
+  );
 
-  const fontAssets: FontAsset[] = fontEntries.map(([fontFamily, info], index) => ({
-    id: `font-${index}`,
-    category: "fonts",
-    name: nameFromUrl(info.url),
-    url: info.url,
-    fontFamily,
-    weights: sortWeights([...info.weights]),
-    fileType: fileTypeFromUrl(info.url, "FONT"),
-    size: formatBytes(fontMeta[index]?.contentLength ?? null),
-    credit,
-  }))
+  const fontAssets: FontAsset[] = fontEntries.map(
+    ([fontFamily, info], index) => ({
+      id: `font-${index}`,
+      category: "fonts",
+      name: nameFromUrl(info.url),
+      url: info.url,
+      fontFamily,
+      weights: sortWeights([...info.weights]),
+      fileType: fileTypeFromUrl(info.url, "FONT"),
+      size: formatBytes(fontMeta[index]?.contentLength ?? null),
+      credit,
+    }),
+  );
 
-  send({ type: "category", category: "fonts", assets: fontAssets })
-  send({ type: "category-done", category: "fonts" })
+  send({ type: "category", category: "fonts", assets: fontAssets });
+  send({ type: "category-done", category: "fonts" });
 
-  const allCss = [inlineCss, ...stylesheetTexts.filter((t): t is string => Boolean(t))].join("\n")
+  const allCss = [
+    inlineCss,
+    ...stylesheetTexts.filter((t): t is string => Boolean(t)),
+  ].join("\n");
   const colorAssets: ColorAsset[] = parseColors(allCss).map((hex, index) => ({
     id: `color-${index}`,
     category: "colors",
@@ -482,71 +618,81 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     fileType: "HEX",
     size: "—",
     credit,
-  }))
+  }));
 
-  send({ type: "category", category: "colors", assets: colorAssets })
-  send({ type: "category-done", category: "colors" })
+  send({ type: "category", category: "colors", assets: colorAssets });
+  send({ type: "category-done", category: "colors" });
 
   // Keep every network rendition under one card and recommend the strongest
   // downloadable candidate instead of showing a wall of duplicates.
-  await networkMediaDone
+  await networkMediaDone;
   for (const video of groupMediaCandidates(networkVideoCandidates)) {
-    pendingMedia.push(emitVideo(video))
+    pendingMedia.push(emitVideo(video));
   }
   for (const audio of groupMediaCandidates(networkAudioCandidates)) {
-    pendingMedia.push(emitAudio(audio))
+    pendingMedia.push(emitAudio(audio));
   }
-  await Promise.all(pendingMedia)
+  await Promise.all(pendingMedia);
 
-  send({ type: "category-done", category: "video" })
-  send({ type: "category-done", category: "audio" })
-  send({ type: "category-done", category: "model3d" })
+  send({ type: "category-done", category: "video" });
+  send({ type: "category-done", category: "audio" });
+  send({ type: "category-done", category: "model3d" });
 
-  send({ type: "done" })
+  send({ type: "done" });
 }
 
 export async function POST(request: Request) {
-  let body: { url?: string }
+  let body: { url?: string };
   try {
-    body = await request.json()
+    body = await request.json();
   } catch {
-    return ndjsonErrorResponse({ kind: "invalid", message: "Bad request body" })
+    return ndjsonErrorResponse({
+      kind: "invalid",
+      message: "Bad request body",
+    });
   }
 
-  const raw = body.url?.trim()
+  const raw = body.url?.trim();
   if (!raw) {
-    return ndjsonErrorResponse({ kind: "invalid", message: "Missing url" })
+    return ndjsonErrorResponse({ kind: "invalid", message: "Missing url" });
   }
 
-  let pageUrl: URL
+  let pageUrl: URL;
   try {
-    pageUrl = assertSafePublicUrl(raw)
+    pageUrl = assertSafePublicUrl(raw);
   } catch (error) {
     if (error instanceof UnsafeUrlError) {
-      return ndjsonErrorResponse({ kind: "invalid", message: error.message })
+      return ndjsonErrorResponse({ kind: "invalid", message: error.message });
     }
-    throw error
+    throw error;
   }
 
-  const encoder = new TextEncoder()
+  const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: ScanStreamEvent) => controller.enqueue(encoder.encode(ndjson(event)))
+      const send = (event: ScanStreamEvent) =>
+        controller.enqueue(encoder.encode(ndjson(event)));
       try {
-        await runScan(pageUrl, send)
+        await runScan(pageUrl, send);
       } catch {
-        send({ type: "error", error: { kind: "broken", message: "Something went wrong while scanning." } })
-        send({ type: "done" })
+        send({
+          type: "error",
+          error: {
+            kind: "broken",
+            message: "Something went wrong while scanning.",
+          },
+        });
+        send({ type: "done" });
       } finally {
-        controller.close()
+        controller.close();
       }
     },
-  })
+  });
 
   return new Response(stream, {
     headers: {
       "content-type": "application/x-ndjson; charset=utf-8",
       "cache-control": "no-cache",
     },
-  })
+  });
 }

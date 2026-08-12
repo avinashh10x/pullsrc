@@ -6,16 +6,22 @@ export interface RawNetworkMedia {
   isStreaming: boolean;
 }
 
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv|avi|mkv|3gp)(?:\?|#|$)/i;
-const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|flac|aac|weba|opus|aiff)(?:\?|#|$)/i;
-const MODEL_EXT = /\.(glb|gltf|usdz|obj|fbx|dae|stl|ply|3mf|vrm|x3d|wrl|splat)(?:\?|#|$)/i;
+const VIDEO_EXT =
+  /\.(mp4|webm|mov|m4v|ogv|avi|mkv|3gp|mts|m2ts|asf|wmv|flv|f4v|hevc|vob|m2v|mxf|vp8|vp9)(?:\?|#|$)/i;
+const AUDIO_EXT =
+  /\.(mp3|wav|ogg|m4a|flac|aac|weba|opus|aiff|alac|wma|m4b|dsd|ape)(?:\?|#|$)/i;
+const MODEL_EXT =
+  /\.(glb|gltf|usdz|obj|fbx|dae|stl|ply|3mf|vrm|x3d|wrl|splat|blend|iges|step|stp)(?:\?|#|$)/i;
+const IMAGE_EXT =
+  /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff|heif|heic|avif|evif)(?:\?|#|$)/i;
 const MANIFEST_EXT = /\.(m3u8|mpd)(?:\?|#|$)/i;
 // HLS/DASH segment/fragment files — chunks of a stream, not standalone videos
 const SEGMENT_EXT = /\.(ts|m4s)(?:\?|#|$)/i;
 // Adaptive-stream renditions split the audio track into its own file/manifest
 // (e.g. foo_dvd.audio.m3u8) — that's audio, not a video, even though it sits
 // right next to the real video variants under the same content-type/manifest rules.
-const AUDIO_ONLY_HINT = /(?:[._-]audio|audio[._-]|\/audio\/).*(?:m3u8|mpd|mp4|m4a|aac|opus)(?:\?|#|$)/i;
+const AUDIO_ONLY_HINT =
+  /(?:[._-]audio|audio[._-]|\/audio\/).*(?:m3u8|mpd|mp4|m4a|aac|opus)(?:\?|#|$)/i;
 
 function classify(
   url: string,
@@ -23,19 +29,35 @@ function classify(
 ): { kind: RawNetworkMedia["kind"]; isStreaming: boolean } | null {
   if (SEGMENT_EXT.test(url)) return null;
 
+  // CRITICAL: Reject image files even if server claims they're video/audio
+  // This prevents .evif and other images from appearing in wrong tabs
+  if (IMAGE_EXT.test(url)) return null;
+
   const isManifest =
     MANIFEST_EXT.test(url) || /mpegurl|dash\+xml/i.test(contentType);
 
-  if (AUDIO_ONLY_HINT.test(url)) return { kind: "audio", isStreaming: isManifest };
+  // Audio-only hint takes precedence
+  if (AUDIO_ONLY_HINT.test(url))
+    return { kind: "audio", isStreaming: isManifest };
+
+  // Manifest (HLS/DASH) streaming
   if (isManifest) return { kind: "video", isStreaming: true };
 
-  if (VIDEO_EXT.test(url) || contentType.startsWith("video/"))
+  // PRIORITIZE FILE EXTENSION over content-type to prevent misclassification
+  // Only use content-type as fallback if no extension recognized
+  if (VIDEO_EXT.test(url)) return { kind: "video", isStreaming: false };
+  if (AUDIO_EXT.test(url)) return { kind: "audio", isStreaming: false };
+  if (MODEL_EXT.test(url)) return { kind: "model3d", isStreaming: false };
+
+  // Fallback: use content-type only when extension isn't recognized
+  if (contentType.startsWith("video/"))
     return { kind: "video", isStreaming: false };
-  if (AUDIO_EXT.test(url) || contentType.startsWith("audio/"))
+  if (contentType.startsWith("audio/"))
     return { kind: "audio", isStreaming: false };
   if (
-    MODEL_EXT.test(url) ||
-    /(?:model\/|application\/(?:gltf|vnd\.google\.earth\.kml|vnd\.ms-3mf|x-3d|x-3ds|x-tgif))/i.test(contentType)
+    /(?:model\/|application\/(?:gltf|vnd\.google\.earth\.kml|vnd\.ms-3mf|x-3d|x-3ds|x-tgif))/i.test(
+      contentType,
+    )
   )
     return { kind: "model3d", isStreaming: false };
 
@@ -120,9 +142,15 @@ async function activateMediaElements(page: Page) {
   await page.waitForTimeout(800);
 }
 
-async function collectPerformanceMedia(page: Page, onMedia: (media: RawNetworkMedia) => void, seen: Set<string>) {
+async function collectPerformanceMedia(
+  page: Page,
+  onMedia: (media: RawNetworkMedia) => void,
+  seen: Set<string>,
+) {
   const urls = await page
-    .evaluate(() => performance.getEntriesByType("resource").map((entry) => entry.name))
+    .evaluate(() =>
+      performance.getEntriesByType("resource").map((entry) => entry.name),
+    )
     .catch(() => [] as string[]);
   for (const url of urls) {
     if (seen.has(url)) continue;
