@@ -28,6 +28,10 @@ import {
   type RawVideo,
 } from "@/lib/pullsrc/server/extract";
 import {
+  extractIframeUrls,
+  resolveEmbedVideos,
+} from "@/lib/pullsrc/server/embeds";
+import {
   captureNetworkMedia,
   type RawNetworkMedia,
 } from "@/lib/pullsrc/server/network-media";
@@ -141,11 +145,17 @@ function mediaGroupKey(url: string): string {
 interface MediaCandidate {
   url: string;
   isStreaming: boolean;
+  quality?: string;
 }
 
 function variantScore(candidate: MediaCandidate): number {
   const lower = candidate.url.toLowerCase();
+  // A provider-supplied label beats guessing from the filename: VideoPress
+  // names its 720p rendition "_hd" and its 480p one "_dvd", neither of which
+  // carries a number to parse.
+  const labelled = Number(/^(\d{3,4})p$/i.exec(candidate.quality ?? "")?.[1] ?? 0);
   const quality =
+    labelled ||
     Number(/(?:^|[._/?=&-])(\d{3,4})p(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0) ||
     Number(
       /(?:^|[._/?=&-])\d{3,4}x(\d{3,4})(?:$|[._/?=&-])/i.exec(lower)?.[1] ?? 0,
@@ -153,9 +163,11 @@ function variantScore(candidate: MediaCandidate): number {
     Number(
       /(?:quality|height|resolution|res)[=_-](\d{3,4})/i.exec(lower)?.[1] ?? 0,
     );
-  const original = /(?:^|[._-])(original|source|master)(?:[._-]|$)/i.test(lower)
-    ? 100_000
-    : 0;
+  const original =
+    /^original$/i.test(candidate.quality ?? "") ||
+    /(?:^|[._-])(original|source|master)(?:[._-]|$)/i.test(lower)
+      ? 100_000
+      : 0;
   // A direct file is the best recommendation for this product because it can
   // actually be downloaded. Streaming-only options remain available as context.
   return (candidate.isStreaming ? 0 : 1_000_000) + original + quality;
@@ -180,28 +192,42 @@ function groupMediaCandidates<T extends MediaCandidate>(
   });
 }
 
-function mediaVariants(
+// Picking between renditions is a size-vs-quality call, so both numbers have
+// to be real — a list of "—" sizes tells the user nothing. Bounded because
+// this is one HEAD per rendition on top of the asset's own.
+const MAX_VARIANT_SIZE_LOOKUPS = 10;
+
+async function mediaVariants(
   recommendedUrl: string,
   candidates: MediaCandidate[] | undefined,
   fallbackType: string,
-): MediaVariant[] {
-  return (candidates ?? [{ url: recommendedUrl, isStreaming: false }]).map(
-    (candidate) => {
-      const fileType = candidate.isStreaming
-        ? "HLS"
-        : fileTypeFromUrl(candidate.url, fallbackType);
-      return {
-        url: candidate.url,
-        name: candidate.isStreaming
-          ? nameFromUrl(candidate.url)
-          : ensureFileExtension(nameFromUrl(candidate.url), fileType),
-        fileType,
-        size: "—",
-        wasStreaming: candidate.isStreaming,
-        recommended: candidate.url === recommendedUrl,
-      };
-    },
+): Promise<MediaVariant[]> {
+  const ordered = [
+    ...(candidates ?? [{ url: recommendedUrl, isStreaming: false }]),
+  ].sort((a, b) => variantScore(b) - variantScore(a));
+
+  const sizes = await mapWithConcurrency(ordered, 6, (candidate, index) =>
+    candidate.isStreaming || index >= MAX_VARIANT_SIZE_LOOKUPS
+      ? Promise.resolve(null)
+      : headSafely(candidate.url),
   );
+
+  return ordered.map((candidate, index) => {
+    const fileType = candidate.isStreaming
+      ? "HLS"
+      : fileTypeFromUrl(candidate.url, fallbackType);
+    return {
+      url: candidate.url,
+      name: candidate.isStreaming
+        ? nameFromUrl(candidate.url)
+        : ensureFileExtension(nameFromUrl(candidate.url), fileType),
+      fileType,
+      quality: candidate.quality,
+      size: formatBytes(sizes[index]?.contentLength ?? null),
+      wasStreaming: candidate.isStreaming,
+      recommended: candidate.url === recommendedUrl,
+    };
+  });
 }
 
 function familyFromFontFileName(url: string): string {
@@ -364,7 +390,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       drmProtected: raw.isStreaming ? drm : undefined,
       fileType,
       size: raw.isStreaming ? "—" : formatBytes(meta?.contentLength ?? null),
-      variants: mediaVariants(raw.url, raw.variants, "MP4"),
+      variants: await mediaVariants(raw.url, raw.variants, "MP4"),
       credit,
     };
     send({ type: "asset", asset });
@@ -407,7 +433,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       size: raw.isStreaming ? "—" : formatBytes(meta?.contentLength ?? null),
       wasStreaming: raw.isStreaming,
       drmProtected: raw.isStreaming ? drm : undefined,
-      variants: mediaVariants(raw.url, raw.variants, "MP3"),
+      variants: await mediaVariants(raw.url, raw.variants, "MP3"),
       credit,
     };
     send({ type: "asset", asset });
@@ -630,11 +656,35 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
 
   // Keep every network rendition under one card and recommend the strongest
   // downloadable candidate instead of showing a wall of duplicates.
-  await networkMediaDone;
-  for (const video of groupMediaCandidates(networkVideoCandidates)) {
+  const [, embedVideos] = await Promise.all([
+    networkMediaDone,
+    embedVideosDone,
+  ]);
+
+  // The network pass sees the same renditions from inside the iframe — both
+  // the video ladder and the audio track the adaptive stream splits out. Drop
+  // both so an embed stays one card instead of doubling up with a regrouped
+  // copy of its own variants plus a phantom audio asset.
+  const embedGroupKeys = new Set(
+    embedVideos.flatMap((video) =>
+      [video, ...(video.variants ?? [])].map((variant) =>
+        mediaGroupKey(variant.url),
+      ),
+    ),
+  );
+  for (const video of embedVideos) pendingMedia.push(emitVideo(video));
+
+  const unclaimedVideos = networkVideoCandidates.filter(
+    (candidate) => !embedGroupKeys.has(mediaGroupKey(candidate.url)),
+  );
+  for (const video of groupMediaCandidates(unclaimedVideos)) {
     pendingMedia.push(emitVideo(video));
   }
-  for (const audio of groupMediaCandidates(networkAudioCandidates)) {
+
+  const unclaimedAudio = networkAudioCandidates.filter(
+    (candidate) => !embedGroupKeys.has(mediaGroupKey(candidate.url)),
+  );
+  for (const audio of groupMediaCandidates(unclaimedAudio)) {
     pendingMedia.push(emitAudio(audio));
   }
   await Promise.all(pendingMedia);

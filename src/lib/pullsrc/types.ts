@@ -28,6 +28,9 @@ export interface MediaVariant {
   name: string
   fileType: string
   size: string
+  // "1080p", "480p", "Original" — what actually distinguishes one rendition
+  // from another. Absent when nothing in the source reveals the resolution.
+  quality?: string
   wasStreaming: boolean
   drmProtected?: boolean
   recommended?: boolean

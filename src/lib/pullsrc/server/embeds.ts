@@ -28,6 +28,9 @@ interface VideoPressInfo {
   adaptive_streaming?: string | null
   file_url_base?: { https?: string }
   files?: Record<string, { mp4?: string } | null>
+  // Keyed by the same rendition names as `files` — carries the human label
+  // ("480p", "1080p") that the filenames themselves never spell out.
+  format_meta?: Record<string, { label?: string } | null>
 }
 
 async function resolveVideoPress(guid: string): Promise<RawVideo | null> {
@@ -46,20 +49,26 @@ async function resolveVideoPress(guid: string): Promise<RawVideo | null> {
 
   const variants: RawVideo[] = []
   const seen = new Set<string>()
-  function push(url: string | null | undefined, isStreaming: boolean) {
+  function push(
+    url: string | null | undefined,
+    isStreaming: boolean,
+    quality?: string
+  ) {
     if (!url || seen.has(url)) return
     seen.add(url)
-    variants.push({ url, isStreaming })
+    variants.push({ url, isStreaming, quality })
   }
 
   // `original` first — it is the untranscoded upload, the best thing to hand
   // someone who wants the asset rather than a stream.
-  push(info.original, false)
+  push(info.original, false, "Original")
 
   const base = info.file_url_base?.https
   if (base) {
-    for (const file of Object.values(info.files ?? {})) {
-      if (file?.mp4) push(resolveUrl(file.mp4, base), false)
+    for (const [rendition, file] of Object.entries(info.files ?? {})) {
+      if (file?.mp4) {
+        push(resolveUrl(file.mp4, base), false, info.format_meta?.[rendition]?.label)
+      }
     }
   }
   push(info.adaptive_streaming, true)

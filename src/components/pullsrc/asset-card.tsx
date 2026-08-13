@@ -7,8 +7,14 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { CategoryIcon } from "@/components/pullsrc/category-icon"
-import type { Asset } from "@/lib/pullsrc/types"
+import type { Asset, MediaVariant } from "@/lib/pullsrc/types"
 
 // Aspect ratio instead of a fixed height — scales with whatever width the
 // grid column actually has, so mobile's narrower 2-col cards stay
@@ -23,6 +29,36 @@ function downloadHref(url: string, name: string, referer: string) {
 function copyToClipboard(value: string, message: string) {
   navigator.clipboard.writeText(value)
   toast.success(message)
+}
+
+// "1080p" means nothing to most people; "Full HD" does. Ordered high to low
+// and matched on the first threshold the height clears.
+const QUALITY_NAMES: Array<[number, string]> = [
+  [2160, "4K Ultra HD"],
+  [1440, "2K"],
+  [1080, "Full HD"],
+  [720, "HD"],
+  [480, "Standard"],
+  [0, "Low quality"],
+]
+
+// A filename tells the user nothing about which download to pick. What they
+// need is how good it looks and how big it is.
+function variantLabel(variant: MediaVariant): { title: string; detail: string } {
+  if (variant.drmProtected) return { title: "Protected", detail: "can't download" }
+  if (variant.wasStreaming) return { title: "Stream", detail: "no direct download" }
+  if (/^original$/i.test(variant.quality ?? "")) {
+    return { title: "Original", detail: "full quality" }
+  }
+
+  const height = Number(/^(\d{3,4})p$/i.exec(variant.quality ?? "")?.[1] ?? 0)
+  if (height) {
+    return {
+      title: QUALITY_NAMES.find(([min]) => height >= min)?.[1] ?? "Low quality",
+      detail: variant.quality ?? "",
+    }
+  }
+  return { title: variant.fileType, detail: "" }
 }
 
 export function AssetCard({
@@ -58,8 +94,13 @@ export function AssetCard({
   const copyValue = isColor ? asset.hex : hasUrl ? asset.url : null
   const copyMessage = isColor ? "Hex code copied" : "Asset URL copied"
 
+  // The variants popover anchors to the whole card rather than its little
+  // chevron, so it lines up flush with the card edges instead of hanging off
+  // one corner.
+  const cardRef = useRef<HTMLDivElement>(null)
+
   return (
-    <Card className="relative gap-0 p-0">
+    <Card ref={cardRef} className="relative gap-0 p-0">
       {selectable && (
         <Checkbox
           checked={selected}
@@ -129,37 +170,79 @@ export function AssetCard({
             </Button>
           )}
           {variants.length > 1 && (
-            <details className="relative">
-              <summary
-                aria-label={`Show ${variants.length} download variants for ${asset.name}`}
-                className="flex size-6 cursor-pointer list-none items-center justify-center rounded-[min(var(--radius-md),10px)] hover:bg-muted [&::-webkit-details-marker]:hidden"
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={`Show ${variants.length} download variants for ${asset.name}`}
+                  />
+                }
               >
-                <ChevronDown className="size-3" />
-              </summary>
-              <div className="absolute top-7 right-0 z-20 w-56 rounded-lg border border-border bg-background p-1.5 shadow-lg">
-                <p className="px-2 py-1 text-xs text-muted-foreground">Download variants</p>
-                {variants.map((variant) =>
-                  variant.wasStreaming || variant.drmProtected ? (
-                    <p key={variant.url} className="flex justify-between gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-                      <span className="truncate">{variant.name}</span>
-                      <span>{variant.drmProtected ? "DRM" : "stream"}</span>
+                <ChevronDown />
+              </PopoverTrigger>
+              {/* Exactly the card's width at every breakpoint — a min-width
+                  would exceed the card on phones and get collision-shifted
+                  off its edges. */}
+              <PopoverContent
+                anchor={cardRef}
+                align="center"
+                className="w-(--anchor-width)"
+              >
+                <p className="px-2 pt-0.5 pb-1.5 text-xs text-muted-foreground">
+                  Choose a quality to download
+                </p>
+                {variants.map((variant) => {
+                  const { title, detail } = variantLabel(variant)
+                  const undownloadable = variant.wasStreaming || variant.drmProtected
+
+                  const row = (
+                    <>
+                      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                        <span className="truncate font-medium">{title}</span>
+                        {detail && (
+                          <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                            {detail}
+                          </span>
+                        )}
+                        {variant.recommended && (
+                          <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-[0.65rem] font-medium text-primary">
+                            Best
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {variant.size}
+                      </span>
+                    </>
+                  )
+
+                  return undownloadable ? (
+                    <p
+                      key={variant.url}
+                      className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm text-muted-foreground"
+                    >
+                      {row}
                     </p>
                   ) : (
-                    <a
+                    <PopoverClose
                       key={variant.url}
-                      href={downloadHref(variant.url, variant.name, asset.credit.originalUrl)}
-                      download={variant.name}
-                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
+                      render={
+                        <a
+                          href={downloadHref(variant.url, variant.name, asset.credit.originalUrl)}
+                          download={variant.name}
+                        />
+                      }
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
                     >
-                      <span className="truncate">{variant.name}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {variant.recommended ? "Best" : variant.fileType}
-                      </span>
-                    </a>
+                      {row}
+                    </PopoverClose>
                   )
-                )}
-              </div>
-            </details>
+                })}
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       </CardContent>

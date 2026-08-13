@@ -25,6 +25,13 @@ type TabValue = "all" | AssetCategory
 const SIDEBAR_BADGE_CLASS =
   "h-7 min-w-8 rounded-full bg-secondary px-2 text-sm font-semibold text-secondary-foreground"
 
+const MOBILE_TAB_CLASS =
+  "flex shrink-0 items-center gap-1 rounded-full border px-2 py-1.5 text-sm whitespace-nowrap transition-colors"
+
+// A pill-shaped Badge inside an already pill-shaped tab is ~32px of chrome
+// per tab — enough to push six tabs off a phone screen on its own.
+const MOBILE_TAB_COUNT_CLASS = "text-xs tabular-nums opacity-70"
+
 const SIDEBAR_TRIGGER_CLASS =
   "h-12 gap-3 rounded-[10px] px-4 py-2 text-base font-semibold data-active:border-primary data-active:bg-accent data-active:text-accent-foreground data-active:shadow-[0_2px_0_rgba(15,106,91,0.16)] focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary/25"
 
@@ -149,55 +156,63 @@ export function ResultsView({
         </div>
       </div>
 
+      {/* Stacked (mobile) this is a flex column, so `items-start` sized panels
+          to their content — the colors grid, whose labels are just a hex code,
+          collapsed to ~80% width. Only the lg row layout wants start
+          alignment, and there it means "don't stretch the sticky sidebar to
+          full height". */}
       <Tabs
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as TabValue)}
         orientation="vertical"
-        className="flex-col items-start gap-4 lg:flex-row lg:gap-8"
+        className="flex-col items-stretch gap-4 lg:flex-row lg:items-start lg:gap-8"
       >
-        {/* Mobile: compact horizontal scroll strip. The vertical sidebar
-            below stacks into a tall full-width list at this width, so it's
-            hidden here instead and swapped in at lg. */}
-        <div className="-mx-4 flex w-[calc(100%+2rem)] gap-1.5 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
+        {/* Mobile: compact strip. The vertical sidebar below stacks into a
+            tall full-width list at this width, so it's hidden here instead
+            and swapped in at lg. Labels collapse to bare icons on phones —
+            six labelled pills overflow a 393px screen — but the active tab
+            keeps its label so the current category is always readable. */}
+        <div className="-mx-4 flex w-[calc(100%+2rem)] gap-1.5 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden lg:hidden">
           <button
             type="button"
             onClick={() => setActiveTab("all")}
+            aria-label={`All (${counts.all})`}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
+              MOBILE_TAB_CLASS,
               activeTab === "all"
                 ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/15"
                 : "border-border text-muted-foreground"
             )}
           >
             <FileStack className="size-3.5" />
-            All
-            <Badge variant="secondary" className="bg-white/25 text-current">
-              {counts.all}
-            </Badge>
+            <span className={cn(activeTab !== "all" && "hidden sm:inline")}>All</span>
+            <span className={MOBILE_TAB_COUNT_CLASS}>{counts.all}</span>
           </button>
           {visibleCategories.map((category) => {
             const isPending = pendingCategories.has(category)
             const count = counts[category]
+            const isActive = activeTab === category
             return (
               <button
                 key={category}
                 type="button"
                 onClick={() => setActiveTab(category)}
+                aria-label={`${CATEGORY_LABEL[category]} (${count})`}
                 className={cn(
-                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
-                  activeTab === category
+                  MOBILE_TAB_CLASS,
+                  isActive
                     ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/15"
                     : "border-border text-muted-foreground"
                 )}
               >
                 <CategoryIcon category={category} className="size-3.5" />
-                {CATEGORY_LABEL[category]}
+                <span className={cn(!isActive && "hidden sm:inline")}>
+                  {CATEGORY_LABEL[category]}
+                </span>
                 {isPending && count === 0 ? (
                   <Loader2 className="size-3 animate-spin" />
                 ) : (
-                  <Badge variant="secondary" className="bg-white/25 text-current">
-                    {count}
-                  </Badge>
+                  <span className={MOBILE_TAB_COUNT_CLASS}>{count}</span>
                 )}
               </button>
             )

@@ -17,6 +17,7 @@ export interface RawFont {
 export interface RawVideo {
   url: string;
   isStreaming: boolean;
+  quality?: string;
   variants?: RawVideo[];
 }
 
