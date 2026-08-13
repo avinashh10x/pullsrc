@@ -68,8 +68,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/og.png",
-        width: 1200,
-        height: 630,
+        width: 1500,
+        height: 500,
         alt: "PullSRC — Every asset, one paste.",
       },
     ],
