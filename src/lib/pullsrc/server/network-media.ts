@@ -175,6 +175,7 @@ export async function captureNetworkMedia(
   try {
     chromiumModule = await import("playwright");
   } catch {
+    console.warn("[pullsrc] playwright not installed — skipping network media capture");
     return;
   }
 
@@ -216,8 +217,11 @@ export async function captureNetworkMedia(
     await clickThroughRevealTriggers(page);
     await activateMediaElements(page);
     await collectPerformanceMedia(page, onMedia, seen);
-  } catch {
-    // best-effort — static extraction still runs regardless
+  } catch (error) {
+    // Best-effort — static extraction still runs regardless. Logged rather
+    // than swallowed: a missing browser binary looks identical to "this page
+    // has no media", which makes the whole pass silently useless.
+    console.warn("[pullsrc] network media capture failed:", (error as Error).message);
   } finally {
     await browser?.close().catch(() => {});
   }

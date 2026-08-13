@@ -468,6 +468,11 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
 
   const networkMediaDone = captureNetworkMedia(pageUrlString, onNetworkMedia);
 
+  // Iframe players (VideoPress et al) expose their renditions through a
+  // provider API, so they arrive pre-grouped — kept out of the network
+  // candidate buffer below to preserve that grouping.
+  const embedVideosDone = resolveEmbedVideos(extractIframeUrls($, pageUrlString), html)
+
   // Static extraction can find the same adaptive-stream variants the network
   // capture does (e.g. player config JSON inlined in the page), so these feed
   // the same buffer/dedup pass rather than being emitted immediately.
