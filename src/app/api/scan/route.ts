@@ -597,19 +597,38 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     fontFamily: familyFromFontFileName(url),
     weight: "—",
     url,
+    coversLatin: true,
   }));
+
+  // A family usually resolves to many files (one per subset, weight and
+  // format) but the card offers a single download, so pick the one a person
+  // actually wants: readable Latin text, in the format browsers prefer, at
+  // regular weight.
+  function fontPickScore(font: RawFont): number {
+    let score = 0;
+    if (font.coversLatin) score += 4;
+    if (/\.woff2(?:[?#]|$)/i.test(font.url)) score += 2;
+    if (/^(?:400|normal)$/i.test(font.weight)) score += 1;
+    return score;
+  }
 
   const fontsByFamily = new Map<
     string,
-    { url: string; weights: Set<string> }
+    { url: string; score: number; weights: Set<string> }
   >();
   for (const font of [...rawFontsFromCss, ...rawFontsFromPreload]) {
     const existing = fontsByFamily.get(font.fontFamily);
+    const score = fontPickScore(font);
     if (existing) {
       existing.weights.add(font.weight);
+      if (score > existing.score) {
+        existing.url = font.url;
+        existing.score = score;
+      }
     } else {
       fontsByFamily.set(font.fontFamily, {
         url: font.url,
+        score,
         weights: new Set([font.weight]),
       });
     }

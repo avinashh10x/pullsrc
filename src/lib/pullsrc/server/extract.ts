@@ -12,6 +12,8 @@ export interface RawFont {
   fontFamily: string;
   weight: string;
   url: string;
+  // False for subset files that can't render A-Z — see rangeCoversBasicLatin.
+  coversLatin: boolean;
 }
 
 export interface RawVideo {
@@ -180,6 +182,28 @@ export function extractPreloadFonts(
   return fonts;
 }
 
+// Subsetting CDNs emit one @font-face per unicode range, so a family can be
+// spread over a dozen files. The cyrillic/greek/vietnamese subsets contain no
+// Latin glyphs at all — downloading one gets you a font that renders nothing.
+function rangeCoversBasicLatin(rangeText: string): boolean {
+  for (const token of rangeText.split(",")) {
+    const range = token.trim().replace(/^u\+/i, "");
+    if (!range) continue;
+
+    const [startText, endText] = range.split("-");
+    // "U+00??" is shorthand for the U+0000-00FF style span.
+    const start = parseInt(startText.replace(/\?/g, "0"), 16);
+    const end = endText
+      ? parseInt(endText, 16)
+      : parseInt(startText.replace(/\?/g, "F"), 16);
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+
+    // 0x41 is "A" — if that's in range the file carries the Latin alphabet.
+    if (start <= 0x41 && 0x41 <= end) return true;
+  }
+  return false;
+}
+
 export function parseFontFaces(cssText: string, cssBaseUrl: string): RawFont[] {
   const fonts: RawFont[] = [];
   const blockPattern = /@font-face\s*{([^}]*)}/gi;
@@ -201,6 +225,11 @@ export function parseFontFaces(cssText: string, cssBaseUrl: string): RawFont[] {
     const weightMatch = /font-weight\s*:\s*([^;]+)/i.exec(block);
     const weight = weightMatch?.[1]?.trim() ?? "400";
 
+    const rangeMatch = /unicode-range\s*:\s*([^;]+)/i.exec(block);
+    const coversLatin = rangeMatch
+      ? rangeCoversBasicLatin(rangeMatch[1])
+      : true;
+
     const urlMatches = [
       ...block.matchAll(/url\(\s*(?:"([^"]+)"|'([^']+)'|([^)]+))\s*\)/gi),
     ];
@@ -212,7 +241,7 @@ export function parseFontFaces(cssText: string, cssBaseUrl: string): RawFont[] {
     const absolute = resolveUrl(rawUrl, cssBaseUrl);
     if (!absolute) continue;
 
-    fonts.push({ fontFamily, weight, url: absolute });
+    fonts.push({ fontFamily, weight, url: absolute, coversLatin });
   }
 
   return fonts;

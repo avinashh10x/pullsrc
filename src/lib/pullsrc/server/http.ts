@@ -33,8 +33,12 @@ export function assertSafePublicUrl(raw: string): URL {
   return url;
 }
 
+// Font CDNs sniff the UA to decide which format to serve: without the
+// Chrome/Safari tokens, fonts.googleapis.com hands back .ttf instead of the
+// .woff2 a real browser gets. The bot identifier stays so we're still honest
+// about who's asking.
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; PullSRCBot/1.0; +https://pullsrc.byavi.in) AppleWebKit/537.36";
+  "Mozilla/5.0 (compatible; PullSRCBot/1.0; +https://pullsrc.byavi.in) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 export async function fetchWithTimeout(
   url: string,

@@ -26,7 +26,15 @@ const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "font/otf": "otf",
   "application/font-woff2": "woff2",
   "application/font-woff": "woff",
+  "application/x-font-woff": "woff",
   "application/x-font-ttf": "ttf",
+  "application/x-font-truetype": "ttf",
+  "application/font-sfnt": "ttf",
+  "application/x-font-otf": "otf",
+  "application/x-font-opentype": "otf",
+  "application/vnd.ms-fontobject": "eot",
+  "font/collection": "ttc",
+  "font/eot": "eot",
 }
 
 // The source URL doesn't always carry a real extension, so trust the
