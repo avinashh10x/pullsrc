@@ -51,6 +51,11 @@ import type {
 
 export const dynamic = "force-dynamic";
 
+// Inflating the serverless Chromium and driving a full scroll/click pass takes
+// well past the platform default — a scan of a heavy 3D site runs ~15s before
+// cold start is even counted. 60s is the Hobby-plan ceiling.
+export const maxDuration = 60;
+
 // A page can legitimately have a gallery, soundtrack, or model library. Keep
 // a generous guardrail so one pathological page cannot exhaust a request.
 const MAX_MEDIA_ASSETS_PER_KIND = 100;

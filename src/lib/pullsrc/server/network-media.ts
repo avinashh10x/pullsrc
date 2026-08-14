@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Browser, Page } from "playwright-core";
 
 export interface RawNetworkMedia {
   url: string;
@@ -161,6 +161,38 @@ async function collectPerformanceMedia(
   }
 }
 
+// Serverless hosts ship no browser: the `playwright` package downloads its
+// Chromium into ~/.cache at install time, which never happens on Vercel, and
+// a full Chromium wouldn't fit in the function bundle anyway. So production
+// runs @sparticuz/chromium — a lambda-sized build — driven by playwright-core,
+// while local dev keeps using the ordinary `playwright` browser.
+const IS_SERVERLESS = Boolean(
+  process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME,
+);
+
+async function launchBrowser(): Promise<Browser> {
+  if (IS_SERVERLESS) {
+    const [{ chromium }, serverlessChromium] = await Promise.all([
+      import("playwright-core"),
+      import("@sparticuz/chromium").then((mod) => mod.default ?? mod),
+    ]);
+
+    // three.js and friends only request their .glb once a WebGL context comes
+    // up, so the software graphics stack has to stay on — with it disabled
+    // every 3D site looks like it has no models at all.
+    serverlessChromium.setGraphicsMode = true;
+
+    return chromium.launch({
+      executablePath: await serverlessChromium.executablePath(),
+      args: serverlessChromium.args,
+      headless: true,
+    });
+  }
+
+  const { chromium } = await import("playwright");
+  return chromium.launch({ args: ["--no-sandbox"] });
+}
+
 // Loads the page in headless Chromium and watches network responses for
 // video/audio/3D-model files that never show up as a static tag in the HTML.
 // `onMedia` fires the instant each asset is detected, so callers streaming
@@ -171,21 +203,11 @@ export async function captureNetworkMedia(
   onMedia: (media: RawNetworkMedia) => void,
   timeoutMs = 10000,
 ): Promise<void> {
-  let chromiumModule: typeof import("playwright");
-  try {
-    chromiumModule = await import("playwright");
-  } catch {
-    console.warn("[pullsrc] playwright not installed — skipping network media capture");
-    return;
-  }
-
   const seen = new Set<string>();
-  let browser: Awaited<
-    ReturnType<typeof chromiumModule.chromium.launch>
-  > | null = null;
+  let browser: Browser | null = null;
 
   try {
-    browser = await chromiumModule.chromium.launch({ args: ["--no-sandbox"] });
+    browser = await launchBrowser();
     const context = await browser.newContext({
       userAgent: USER_AGENT,
       viewport: { width: 1440, height: 1000 },
