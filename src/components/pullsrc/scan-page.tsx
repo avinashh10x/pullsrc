@@ -95,6 +95,10 @@ export function ScanPage() {
           case "error":
             return { name: "error", kind: event.error.kind, message: event.error.message }
 
+          case "notice":
+            console.warn(`[pullsrc] ${event.scope}: ${event.message}`)
+            return current
+
           case "done":
             if (current.name !== "results") return current
             return { ...current, scanning: false }

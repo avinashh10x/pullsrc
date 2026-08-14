@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import type { Browser, Page } from "playwright-core";
 
 export interface RawNetworkMedia {
@@ -170,6 +173,36 @@ const IS_SERVERLESS = Boolean(
   process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME,
 );
 
+// @sparticuz/chromium's flag list is tuned for puppeteer, which tolerates a
+// browser that renders in-process. Playwright drives the browser over a pipe
+// and expects it to fork renderer processes, so these three make launch fail
+// outright — they have to come out.
+const PLAYWRIGHT_INCOMPATIBLE_ARGS = new Set([
+  "--single-process",
+  "--no-zygote",
+  "--in-process-gpu",
+]);
+
+// The package finds its own bin/ via import.meta.url, which Next muddies by
+// symlinking externalised packages into .next/node_modules under a hashed
+// name. Locate the archives ourselves and hand over an explicit path, so a
+// packaging change can't silently turn into "this site has no media".
+function resolveChromiumBinDir(): { dir: string | null; tried: string[] } {
+  const candidates = [
+    path.join(process.cwd(), "node_modules/@sparticuz/chromium/bin"),
+    path.join(
+      process.cwd(),
+      ".next/server/node_modules/@sparticuz/chromium/bin",
+    ),
+    path.join(process.cwd(), ".next/node_modules/@sparticuz/chromium/bin"),
+  ];
+
+  for (const dir of candidates) {
+    if (existsSync(path.join(dir, "chromium.br"))) return { dir, tried: candidates };
+  }
+  return { dir: null, tried: candidates };
+}
+
 async function launchBrowser(): Promise<Browser> {
   if (IS_SERVERLESS) {
     const [{ chromium }, serverlessChromium] = await Promise.all([
@@ -182,9 +215,18 @@ async function launchBrowser(): Promise<Browser> {
     // every 3D site looks like it has no models at all.
     serverlessChromium.setGraphicsMode = true;
 
+    const { dir, tried } = resolveChromiumBinDir();
+    if (!dir) {
+      throw new Error(
+        `@sparticuz/chromium archives missing. cwd=${process.cwd()} tried=${tried.join(", ")}`,
+      );
+    }
+
     return chromium.launch({
-      executablePath: await serverlessChromium.executablePath(),
-      args: serverlessChromium.args,
+      executablePath: await serverlessChromium.executablePath(dir),
+      args: serverlessChromium.args.filter(
+        (arg) => !PLAYWRIGHT_INCOMPATIBLE_ARGS.has(arg),
+      ),
       headless: true,
     });
   }
@@ -201,6 +243,7 @@ async function launchBrowser(): Promise<Browser> {
 export async function captureNetworkMedia(
   pageUrl: string,
   onMedia: (media: RawNetworkMedia) => void,
+  onDegraded?: (message: string) => void,
   timeoutMs = 10000,
 ): Promise<void> {
   const seen = new Set<string>();
@@ -240,10 +283,13 @@ export async function captureNetworkMedia(
     await activateMediaElements(page);
     await collectPerformanceMedia(page, onMedia, seen);
   } catch (error) {
-    // Best-effort — static extraction still runs regardless. Logged rather
-    // than swallowed: a missing browser binary looks identical to "this page
-    // has no media", which makes the whole pass silently useless.
-    console.warn("[pullsrc] network media capture failed:", (error as Error).message);
+    // Best-effort — static extraction still runs regardless. Reported rather
+    // than swallowed: a browser that won't start looks identical to "this page
+    // has no media", so without this the scan quietly returns partial results
+    // and every client-rendered site looks empty.
+    const message = (error as Error).message;
+    console.warn("[pullsrc] network media capture failed:", message);
+    onDegraded?.(message);
   } finally {
     await browser?.close().catch(() => {});
   }

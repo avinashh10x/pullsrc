@@ -135,4 +135,7 @@ export type ScanStreamEvent =
   | { type: "asset"; asset: Asset }
   | { type: "category-done"; category: AssetCategory }
   | { type: "error"; error: ScanError }
+  // Non-fatal: part of the scan degraded (e.g. the headless browser wouldn't
+  // start) so results are incomplete. The scan still finishes.
+  | { type: "notice"; scope: string; message: string }
   | { type: "done" }

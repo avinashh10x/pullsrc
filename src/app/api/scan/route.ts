@@ -497,7 +497,12 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     pendingMedia.push(emitModel({ url: media.url }));
   }
 
-  const networkMediaDone = captureNetworkMedia(pageUrlString, onNetworkMedia);
+  const networkMediaDone = captureNetworkMedia(
+    pageUrlString,
+    onNetworkMedia,
+    (message) =>
+      send({ type: "notice", scope: "network-capture", message }),
+  );
 
   // Iframe players (VideoPress et al) expose their renditions through a
   // provider API, so they arrive pre-grouped — kept out of the network
