@@ -1,17 +1,16 @@
 import JSZip from "jszip"
 
 import { buildCreditSheet } from "./credit"
+import { assetDownloads } from "./download"
 import type { Asset, ScanResult } from "./types"
-
-function downloadProxyUrl(url: string, name: string, referer: string) {
-  return `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&referer=${encodeURIComponent(referer)}`
-}
 
 function hasDownloadableUrl(
   asset: Asset
 ): asset is Asset & { url: string } {
   if (asset.category === "colors") return false
-  if ((asset.category === "video" || asset.category === "audio") && asset.wasStreaming) return false
+  // Streams are no longer excluded — /api/stream assembles them into a file.
+  // DRM still is, since there is nothing to assemble.
+  if ((asset.category === "video" || asset.category === "audio") && asset.drmProtected) return false
   return "url" in asset
 }
 
@@ -32,18 +31,22 @@ export async function buildExportZip(
   const downloadable = assets.filter(hasDownloadableUrl)
 
   await Promise.all(
-    downloadable.map(async (asset) => {
-      try {
-        const res = await fetch(downloadProxyUrl(asset.url, asset.name, result.pageUrl))
-        if (!res.ok) return
-        const blob = await res.blob()
-        zip
-          .folder(asset.category)
-          ?.file(filenameFromResponse(res, asset.name), blob)
-      } catch {
-        // skip assets that fail to fetch, keep the rest of the export intact
-      }
-    })
+    downloadable.flatMap((asset) =>
+      // A split stream contributes two files, so one asset can be several
+      // entries in the zip.
+      assetDownloads(asset, result.pageUrl).map(async (download) => {
+        try {
+          const res = await fetch(download.href)
+          if (!res.ok) return
+          const blob = await res.blob()
+          zip
+            .folder(asset.category)
+            ?.file(filenameFromResponse(res, download.filename), blob)
+        } catch {
+          // skip assets that fail to fetch, keep the rest of the export intact
+        }
+      })
+    )
   )
 
   zip.file("credit-sheet.txt", buildCreditSheet({ ...result, assets }))

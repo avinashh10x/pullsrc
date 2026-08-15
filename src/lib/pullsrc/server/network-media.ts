@@ -26,21 +26,73 @@ const SEGMENT_EXT = /\.(ts|m4s)(?:\?|#|$)/i;
 const AUDIO_ONLY_HINT =
   /(?:[._-]audio|audio[._-]|\/audio\/).*(?:m3u8|mpd|mp4|m4a|aac|opus)(?:\?|#|$)/i;
 
+// Interface sound effects, not content. A YouTube page alone serves four of
+// them (open/success/failure/no_input), and surfacing those as "audio assets"
+// buries whatever the page is actually about.
+const UI_CHROME_AUDIO =
+  /\/(?:s\/search\/audio|sounds?|sfx|ui|notification|chime|alert)\/|(?:^|\/)(?:click|beep|pop|ding|tick|chime|whoosh|success|failure|error|no_input|open|close|start|stop|notify)[._-]?\d*\.(?:mp3|wav|ogg|m4a)(?:\?|#|$)/i;
+
+// Facebook/Instagram players don't use Range headers — they put the window in
+// the query string and pull a file down in a dozen `bytestart`/`byteend` slices.
+// Captured verbatim, each slice looks like a separate asset, and whichever one
+// arrives first wins the dedup: usually a 248-byte fragment from the middle of
+// the file. Dropping those two parameters collapses every slice back onto the
+// one URL that serves the whole file.
+const RANGE_QUERY_PARAMS = ["bytestart", "byteend"];
+
+export function canonicalMediaUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    let touched = false;
+    for (const param of RANGE_QUERY_PARAMS) {
+      if (parsed.searchParams.has(param)) {
+        parsed.searchParams.delete(param);
+        touched = true;
+      }
+    }
+    return touched ? parsed.toString() : url;
+  } catch {
+    return url;
+  }
+}
+
+// YouTube delivers media by POSTing to /videoplayback and reading back
+// `application/vnd.yt-ump`, so a captured googlevideo URL is never a file
+// anyone can fetch — and youtube.com itself serves placeholder manifests that
+// are equally useless. Listing either produces an asset that always fails; the
+// scan reports the situation as a notice instead.
+const UNFETCHABLE_MEDIA_HOST =
+  /(?:^|\.)(?:googlevideo\.com|youtube\.com|youtube-nocookie\.com)$/i;
+
 function classify(
   url: string,
   contentType: string,
 ): { kind: RawNetworkMedia["kind"]; isStreaming: boolean } | null {
-  if (SEGMENT_EXT.test(url)) return null;
+  // Extensions must be matched against the path alone. Against the whole URL,
+  // a hostname ending in a new gTLD reads as a filename — `https://studio.blend`
+  // was being caught by MODEL_EXT and listed as a 3D model.
+  let path: string;
+  try {
+    const parsed = new URL(url);
+    if (UNFETCHABLE_MEDIA_HOST.test(parsed.hostname)) return null;
+    path = parsed.pathname;
+  } catch {
+    return null;
+  }
+
+  if (SEGMENT_EXT.test(path)) return null;
 
   // CRITICAL: Reject image files even if server claims they're video/audio
   // This prevents .evif and other images from appearing in wrong tabs
-  if (IMAGE_EXT.test(url)) return null;
+  if (IMAGE_EXT.test(path)) return null;
+
+  if (UI_CHROME_AUDIO.test(path)) return null;
 
   const isManifest =
-    MANIFEST_EXT.test(url) || /mpegurl|dash\+xml/i.test(contentType);
+    MANIFEST_EXT.test(path) || /mpegurl|dash\+xml/i.test(contentType);
 
   // Audio-only hint takes precedence
-  if (AUDIO_ONLY_HINT.test(url))
+  if (AUDIO_ONLY_HINT.test(path))
     return { kind: "audio", isStreaming: isManifest };
 
   // Manifest (HLS/DASH) streaming
@@ -48,9 +100,9 @@ function classify(
 
   // PRIORITIZE FILE EXTENSION over content-type to prevent misclassification
   // Only use content-type as fallback if no extension recognized
-  if (VIDEO_EXT.test(url)) return { kind: "video", isStreaming: false };
-  if (AUDIO_EXT.test(url)) return { kind: "audio", isStreaming: false };
-  if (MODEL_EXT.test(url)) return { kind: "model3d", isStreaming: false };
+  if (VIDEO_EXT.test(path)) return { kind: "video", isStreaming: false };
+  if (AUDIO_EXT.test(path)) return { kind: "audio", isStreaming: false };
+  if (MODEL_EXT.test(path)) return { kind: "model3d", isStreaming: false };
 
   // Fallback: use content-type only when extension isn't recognized
   if (contentType.startsWith("video/"))
@@ -155,7 +207,8 @@ async function collectPerformanceMedia(
       performance.getEntriesByType("resource").map((entry) => entry.name),
     )
     .catch(() => [] as string[]);
-  for (const url of urls) {
+  for (const raw of urls) {
+    const url = canonicalMediaUrl(raw);
     if (seen.has(url)) continue;
     const classified = classify(url, "");
     if (!classified) continue;
@@ -336,7 +389,9 @@ export async function captureNetworkMedia(
     if (session.note) onDegraded?.(session.note);
 
     page.on("response", (response) => {
-      const url = response.url();
+      // Canonicalise before the dedup check, so a dozen ranged slices of one
+      // file register as the single asset they actually are.
+      const url = canonicalMediaUrl(response.url());
       if (seen.has(url)) return;
 
       const contentType = response.headers()["content-type"] ?? "";

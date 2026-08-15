@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { CategoryIcon } from "@/components/pullsrc/category-icon"
+import { assetDownloads, variantHref } from "@/lib/pullsrc/download"
 import type { Asset, MediaVariant } from "@/lib/pullsrc/types"
 
 // Aspect ratio instead of a fixed height — scales with whatever width the
@@ -21,10 +22,6 @@ import type { Asset, MediaVariant } from "@/lib/pullsrc/types"
 // proportionate instead of towering over their own width.
 const PREVIEW_ASPECT = "aspect-[4/3]"
 const PREVIEW_SHAPE = "rounded-xl"
-
-function downloadHref(url: string, name: string, referer: string) {
-  return `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&referer=${encodeURIComponent(referer)}`
-}
 
 function copyToClipboard(value: string, message: string) {
   navigator.clipboard.writeText(value)
@@ -46,7 +43,7 @@ const QUALITY_NAMES: Array<[number, string]> = [
 // need is how good it looks and how big it is.
 function variantLabel(variant: MediaVariant): { title: string; detail: string } {
   if (variant.drmProtected) return { title: "Protected", detail: "can't download" }
-  if (variant.wasStreaming) return { title: "Stream", detail: "no direct download" }
+  if (variant.wasStreaming) return { title: "Stream", detail: "assembled on download" }
   if (/^original$/i.test(variant.quality ?? "")) {
     return { title: "Original", detail: "full quality" }
   }
@@ -80,16 +77,20 @@ export function AssetCard({
     (asset.category === "video" || asset.category === "audio") && asset.drmProtected
   const isStreamingOnly =
     (asset.category === "video" || asset.category === "audio") && asset.wasStreaming
-  const selectable = !isDrm && !isStreamingOnly
+  // Streams used to be excluded here. They're assembled into a real file by
+  // /api/stream now, so only DRM is genuinely out of reach.
+  const selectable = !isDrm
   const hasUrl = "url" in asset
   const variants = "variants" in asset ? asset.variants ?? [] : []
+  const downloads = assetDownloads(asset, asset.credit.originalUrl)
 
   const metaParts = [asset.fileType, asset.size !== "—" ? asset.size : null].filter(Boolean)
   if (asset.category === "fonts") {
     metaParts.push(`${asset.weights.length} weight${asset.weights.length === 1 ? "" : "s"}`)
   }
   if (isDrm) metaParts.push("DRM")
-  else if (isStreamingOnly) metaParts.push("streaming only")
+  else if (isStreamingOnly) metaParts.push("stream")
+  if (asset.category === "video" && asset.audioUrl) metaParts.push("video + audio")
 
   const copyValue = isColor ? asset.hex : hasUrl ? asset.url : null
   const copyMessage = isColor ? "Hex code copied" : "Asset URL copied"
@@ -156,19 +157,24 @@ export function AssetCard({
               <Copy />
             </Button>
           )}
-          {selectable && hasUrl && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`Download ${asset.name}`}
-              render={
-                <a href={downloadHref(asset.url, asset.name, asset.credit.originalUrl)} download={asset.name} />
-              }
-            >
-              <Download />
-            </Button>
-          )}
+          {selectable &&
+            hasUrl &&
+            downloads.map((download) => (
+              <Button
+                key={download.href}
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={
+                  downloads.length > 1
+                    ? `Download ${download.label} for ${asset.name}`
+                    : `Download ${asset.name}`
+                }
+                render={<a href={download.href} download={download.filename} />}
+              >
+                {download.label === "audio" ? <Volume2 /> : <Download />}
+              </Button>
+            ))}
           {variants.length > 1 && (
             <Popover>
               <PopoverTrigger
@@ -196,7 +202,7 @@ export function AssetCard({
                 </p>
                 {variants.map((variant) => {
                   const { title, detail } = variantLabel(variant)
-                  const undownloadable = variant.wasStreaming || variant.drmProtected
+                  const undownloadable = variant.drmProtected
 
                   const row = (
                     <>
@@ -231,7 +237,7 @@ export function AssetCard({
                       key={variant.url}
                       render={
                         <a
-                          href={downloadHref(variant.url, variant.name, asset.credit.originalUrl)}
+                          href={variantHref(variant, asset.credit.originalUrl)}
                           download={variant.name}
                         />
                       }

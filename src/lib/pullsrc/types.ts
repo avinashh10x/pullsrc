@@ -20,6 +20,10 @@ interface BaseAsset {
   name: string
   fileType: string
   size: string
+  // The raw byte count behind `size`. Kept alongside the display string so the
+  // download proxy can tell a whole file from an expired link that now returns
+  // only a header. Null when the origin never reported a length.
+  sizeBytes?: number | null
   credit: CreditInfo
 }
 
@@ -34,6 +38,7 @@ export interface MediaVariant {
   wasStreaming: boolean
   drmProtected?: boolean
   recommended?: boolean
+  sizeBytes?: number | null
 }
 
 export interface ImageAsset extends BaseAsset {
@@ -65,6 +70,13 @@ export interface VideoAsset extends BaseAsset {
   wasStreaming: boolean
   drmProtected?: boolean
   variants?: MediaVariant[]
+  // Adaptive-stream packagers (Instagram, Reddit CMAF) ship picture and sound
+  // as separate files, so `url` on its own is a silent video. When its partner
+  // track is identified, it rides along here instead of appearing as a
+  // mystery second "video" card.
+  audioUrl?: string
+  audioName?: string
+  audioSizeBytes?: number | null
 }
 
 export interface AudioAsset extends BaseAsset {

@@ -21,6 +21,9 @@ export interface RawVideo {
   isStreaming: boolean;
   quality?: string;
   variants?: RawVideo[];
+  // Set when this is the picture half of a stream whose sound ships separately
+  // — see reconcileTracks in the scan route.
+  audioUrl?: string;
 }
 
 export interface RawAudio {
