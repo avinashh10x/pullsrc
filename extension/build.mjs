@@ -39,7 +39,7 @@ async function copyStatic() {
   await cp(resolve(here, "manifest.json"), resolve(out, "manifest.json"));
   await cp(resolve(src, "panel.html"), resolve(out, "panel.html"));
   await cp(resolve(src, "panel.css"), resolve(out, "panel.css"));
-  await cp(resolve(here, "..", "public", "logo.png"), resolve(out, "icon128.png"));
+  await cp(resolve(here, "icons"), resolve(out, "icons"), { recursive: true });
 }
 
 if (watch) {

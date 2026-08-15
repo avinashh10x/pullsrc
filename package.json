@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "build:ext": "node extension/build.mjs",
-    "dev:ext": "node extension/build.mjs --watch"
+    "dev:ext": "node extension/build.mjs --watch",
+    "icons:ext": "node extension/make-icons.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -6,7 +6,12 @@
   "description": "Pull images, logos, fonts, colours, video, audio and 3D models out of any page you can open \u2014 including pages that need a login.",
   "minimum_chrome_version": "116",
   "action": {
-    "default_title": "Open PullSRC"
+    "default_title": "Open PullSRC",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
   "background": {
     "service_worker": "background.js",
@@ -28,7 +33,10 @@
     "<all_urls>"
   ],
   "icons": {
-    "128": "icon128.png"
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
