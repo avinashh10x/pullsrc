@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "PullSRC \u2014 Every asset, one paste",
+  "short_name": "PullSRC",
+  "version": "0.1.0",
+  "description": "Pull images, logos, fonts, colours, video, audio and 3D models out of any page you can open \u2014 including pages that need a login.",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Open PullSRC"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "permissions": [
+    "webRequest",
+    "webNavigation",
+    "storage",
+    "downloads",
+    "sidePanel",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "icons": {
+    "128": "icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

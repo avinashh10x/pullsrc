@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:ext": "node extension/build.mjs",
+    "dev:ext": "node extension/build.mjs --watch"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -30,9 +32,11 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/chrome": "^0.2.6",
     "@types/node": "20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "playwright": "^1.62.1",

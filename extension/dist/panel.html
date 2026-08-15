@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PullSRC</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <span class="wordmark">PullSRC</span>
+        <span id="page" class="page"></span>
+      </div>
+      <button id="rescan" class="btn ghost tiny" type="button" title="Scan this page again">
+        Rescan
+      </button>
+    </header>
+
+    <div id="scanning" class="scanning" hidden></div>
+    <div id="empty" class="empty" hidden></div>
+
+    <nav id="tabs" class="tabs" hidden></nav>
+    <main id="list" class="grid"></main>
+
+    <div id="bulk" class="bulk" hidden>
+      <span id="bulk-count" class="bulk-count"></span>
+      <button id="bulk-clear" class="btn ghost tiny" type="button">Clear</button>
+      <button id="bulk-save" class="btn tiny" type="button">Download</button>
+    </div>
+
+    <footer id="foot" class="foot" hidden>
+      <button id="credit" class="btn ghost" type="button">Credit sheet</button>
+      <button id="zip" class="btn" type="button">Save all as ZIP</button>
+    </footer>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>
