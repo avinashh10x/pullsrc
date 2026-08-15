@@ -32,8 +32,7 @@ let active: AssetCategory | "all" = "all";
 const selected = new Set<string>();
 let scannedUrl = "";
 
-// model-viewer is ~1MB, so it is only pulled in when a page actually has 3D
-// assets. Loading it registers the <model-viewer> custom element globally.
+// ~1MB, so only loaded when a page actually has 3D assets.
 let modelViewerLoad: Promise<unknown> | null = null;
 function ensureModelViewer(): Promise<unknown> {
   modelViewerLoad ??= import("@google/model-viewer").catch(() => null);
@@ -105,11 +104,7 @@ async function activeTab(): Promise<chrome.tabs.Tab | null> {
   return recent ?? tab ?? null;
 }
 
-/**
- * Folds every frame's findings into one snapshot. The top frame is listed
- * first by Chrome, so it supplies the page identity; sub-frames only ever
- * contribute assets. Duplicates across frames are collapsed by URL.
- */
+/** Chrome lists the top frame first, so it supplies the page identity. */
 function mergeFrames(frames: PageSnapshot[], fallbackUrl: string): PageSnapshot {
   const top = frames[0];
   const merged: PageSnapshot = {
@@ -153,9 +148,7 @@ async function scan(): Promise<void> {
 
   let snapshot: PageSnapshot;
   try {
-    // allFrames, because a great deal of the web puts its real content in an
-    // iframe — embedded players, demo sandboxes, checkout widgets. Injecting
-    // only into the top frame silently misses all of it.
+    // allFrames: embedded players and demo sandboxes live in iframes.
     const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: collectSnapshot,
@@ -180,9 +173,7 @@ async function scan(): Promise<void> {
     tabId: tab.id,
   });
 
-  // Re-scanning the page you are already on (a late load event, or flipping
-  // back to this tab) must not throw away ticked checkboxes. Only a different
-  // page means the old selection is meaningless.
+  // A late load event on the same page must not discard ticked checkboxes.
   if (tab.url !== scannedUrl) {
     selected.clear();
     active = "all";
@@ -278,7 +269,7 @@ function preview(asset: Asset): HTMLElement {
   }
 
   if (asset.category === "fonts") {
-    // A real @font-face so the card shows the typeface, not just its name.
+    // A real @font-face, so the card shows the typeface not just its name.
     const family = `pf-${asset.id}`;
     const style = document.createElement("style");
     style.textContent = `@font-face{font-family:"${family}";src:url("${asset.url}");font-display:swap}`;
@@ -315,8 +306,7 @@ function preview(asset: Asset): HTMLElement {
   }
 
   if (asset.category === "model3d") {
-    // Show the icon immediately, then swap in the real model once the viewer
-    // is registered — a 5 MB GLB should never block the grid from rendering.
+    // Icon first: a 5 MB GLB must never block the grid from rendering.
     box.innerHTML = icon("model3d") + typeTag(asset.fileType);
     void ensureModelViewer().then((mod) => {
       if (!mod) return;
@@ -348,7 +338,7 @@ function card(asset: Asset): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "card";
 
-  // Colours have nothing to download, so they are not selectable.
+  // Colours have nothing to download.
   if (asset.category !== "colors") {
     const pick = document.createElement("input");
     pick.type = "checkbox";
@@ -478,7 +468,7 @@ async function zipAssets(
       const res = await fetch(source, { credentials: "include" });
       if (!res.ok) continue;
       zip.folder(asset.category)?.file(asset.name, await res.blob());
-      // A split stream's sound is a separate file; without it the video is silent.
+      // Without its partner track the video is silent.
       if (asset.category === "video" && asset.audioUrl && asset.audioName) {
         const audio = await fetch(asset.audioUrl, { credentials: "include" });
         if (audio.ok) zip.folder(asset.category)?.file(asset.audioName, await audio.blob());
@@ -518,8 +508,7 @@ bulkSaveBtn.onclick = () => {
 
 rescanBtn.onclick = () => void scan();
 
-// Re-scan when the user switches tabs, so the panel always describes what they
-// are actually looking at rather than whatever was open when it was first used.
+// Keep the panel describing whatever tab the user is actually looking at.
 chrome.tabs.onActivated.addListener(() => void scan());
 chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   if (change.status === "complete" && tab.active) void scan();

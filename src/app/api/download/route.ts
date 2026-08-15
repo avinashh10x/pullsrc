@@ -49,10 +49,8 @@ function withCorrectExtension(filename: string, contentType: string | null): str
   return `${match ? filename.slice(0, match.index) : filename}.${ext}`
 }
 
-// Signed CDN URLs (fbcdn especially) don't 403 once their window closes — they
-// answer 200 with just the file header and no media payload, which used to
-// reach the user as a "successful" download of a few hundred corrupt bytes.
-// The scan recorded the real size, so a large shortfall is provably an expiry.
+// Expired signed CDN URLs answer 200 with just a header, not a 403 — so a
+// large shortfall against the size the scan recorded means expiry.
 function looksTruncated(expected: number | null, actual: number | null): boolean {
   if (!expected || !actual) return false
   return actual < Math.min(expected * 0.5, expected - 1024)
@@ -104,8 +102,7 @@ export async function GET(request: Request) {
 
   const contentType = upstream.headers.get("content-type")
 
-  // An expired link often redirects to a login or error page. Serving that as
-  // an .mp4 is worse than failing, because the file looks like it downloaded.
+  // Serving a login page as an .mp4 is worse than failing: it looks fine.
   if (contentType?.includes("text/html")) {
     return new Response(
       "That link has expired — the site returned a web page instead of the file. Re-scan the page to get a fresh link.",

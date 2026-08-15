@@ -23,9 +23,8 @@ import type {
 
 import type { CapturedMedia, PageSnapshot } from "./shared";
 
-// Turns what the service worker saw on the wire plus what the content script
-// saw in the DOM into the same ScanResult shape the web app produces, so the
-// credit sheet and zip export work unchanged.
+// Wire capture + DOM snapshot → the same ScanResult the web app produces, so
+// the credit sheet and zip export work unchanged.
 
 const MAX_IMAGES = 60;
 const MAX_FONTS = 20;
@@ -57,11 +56,9 @@ function ensureFileExtension(name: string, fileType: string): string {
 }
 
 /**
- * The service worker only sees requests made while it was awake, so a page
- * loaded before the panel was opened contributes nothing. The content script's
- * resource timeline knows about those anyway, so anything there that classifies
- * as media is folded in — this is what makes short one-shot sounds (UI clicks,
- * whooshes, hover SFX) show up rather than silently vanishing.
+ * The worker only sees requests made while awake, so a page loaded before the
+ * panel opened contributes nothing. Folding in the resource timeline is what
+ * makes short one-shot sounds (clicks, whooshes, hover SFX) show up.
  */
 function mergeDomMedia(
   snapshot: PageSnapshot,
@@ -80,8 +77,7 @@ function mergeDomMedia(
       kind: classified.kind,
       isStreaming: classified.isStreaming,
       contentType: "",
-      // Unknown until the HEAD in sizeOf below; the wire capture has real numbers.
-      sizeBytes: null,
+      sizeBytes: null, // filled by the HEAD in sizeOf below
     });
   }
   return merged;
@@ -190,8 +186,7 @@ export async function assembleAssets(
   });
 
   // --- video / audio / 3d -------------------------------------------------
-  // Same reconciliation the web app runs: probe the real bytes, fold split
-  // renditions together, attach the sound track to its silent picture.
+  // Same reconciliation the web app runs.
   const asCandidate = (item: CapturedMedia): TrackCandidate => ({
     url: item.url,
     isStreaming: item.isStreaming,

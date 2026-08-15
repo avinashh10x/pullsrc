@@ -91,9 +91,8 @@ interface VimeoConfig {
   }
 }
 
-// Vimeo publishes its player configuration openly. Most videos no longer offer
-// progressive MP4s there, so HLS is usually all there is — which is fine, since
-// /api/stream turns a playlist into a real file.
+// Most Vimeo videos no longer expose progressive MP4s, so HLS is usually all
+// there is — fine, since /api/stream turns a playlist into a file.
 async function resolveVimeo(id: string): Promise<RawVideo | null> {
   const text = await fetchTextSafely(`https://player.vimeo.com/video/${id}/config`, {
     timeoutMs: 6000,
@@ -140,11 +139,8 @@ interface OEmbed {
   author_name?: string
 }
 
-// YouTube moves its media over POST to /videoplayback as `application/vnd.yt-ump`
-// (their SABR protocol), so there is no file URL to capture — no amount of
-// network watching will produce one. What is openly available is oEmbed
-// metadata and the poster frame, so that is what gets returned. The scan
-// reports the video itself as unavailable rather than inventing an asset.
+// YouTube's SABR protocol means there is no file URL to capture. oEmbed
+// metadata and the poster frame are openly available, so that is what we take.
 async function resolveYouTube(id: string): Promise<YouTubeEmbed | null> {
   const text = await fetchTextSafely(
     `https://www.youtube.com/oembed?url=${encodeURIComponent(
@@ -165,7 +161,7 @@ async function resolveYouTube(id: string): Promise<YouTubeEmbed | null> {
     id,
     title: data.title ?? `YouTube video ${id}`,
     author: data.author_name ?? "",
-    // oEmbed only ever offers hqdefault; maxres is the full-size poster frame.
+    // oEmbed only offers hqdefault; maxres is the full-size frame.
     thumbnailUrl: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
   }
 }
@@ -180,10 +176,7 @@ function idsIn(pattern: RegExp, sources: string[]): string[] {
   return [...ids]
 }
 
-/**
- * YouTube links and embeds on a page, resolved to title plus poster frame.
- * Separate from the video resolvers because it deliberately yields no video.
- */
+/** Separate from the video resolvers because it deliberately yields no video. */
 export async function resolveYouTubeEmbeds(
   iframeUrls: string[],
   html: string

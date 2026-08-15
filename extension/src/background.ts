@@ -5,14 +5,11 @@ import {
 
 import { SESSION_KEY, isHttp, type CaptureState, type CapturedMedia } from "./shared";
 
-// The web app has to drive a headless browser and force-play every media
-// element to discover what a page loads. Here the user's own browser is already
-// doing that, so watching chrome.webRequest gets the same list for free — and
-// gets it from a real session, so login-gated pages work too.
+// The browser already loaded the page, so webRequest gets the media list for
+// free — and from a real session, so login-gated pages work.
 
-// MV3 service workers are killed after ~30s idle, taking module state with
-// them. Everything therefore write-throughs to session storage, which survives
-// the restart but is cleared when the browser closes.
+// MV3 kills the worker after ~30s idle, so state write-throughs to session
+// storage, which survives the restart but not the browser closing.
 const captures = new Map<number, CaptureState>();
 let restored = false;
 
@@ -26,14 +23,14 @@ async function restore(): Promise<void> {
       captures.set(Number(tabId), state);
     }
   } catch {
-    // A cold profile has nothing stored; that's the normal case, not an error.
+    // A cold profile has nothing stored.
   }
 }
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleFlush(): void {
   if (flushTimer) return;
-  // Media arrives in bursts, so batching keeps this off the hot path.
+  // Media arrives in bursts; batching keeps this off the hot path.
   flushTimer = setTimeout(() => {
     flushTimer = null;
     void chrome.storage.session.set({
@@ -60,8 +57,7 @@ function headerValue(
   return found?.value ?? "";
 }
 
-// Listeners must be registered synchronously at the top level, or a restarted
-// service worker misses the events that woke it.
+// Must register synchronously, or a restarted worker misses the waking event.
 chrome.webRequest.onHeadersReceived.addListener(
   (details): undefined => {
     if (details.tabId < 0 || !isHttp(details.url)) return;
@@ -93,9 +89,8 @@ chrome.webRequest.onHeadersReceived.addListener(
   ["responseHeaders"],
 );
 
-// A top-level navigation means the previous page's media is no longer what the
-// user is looking at. Sub-frame and history changes are deliberately ignored,
-// since a SPA route change usually keeps the same media in play.
+// Sub-frame and history changes are ignored: an SPA route change usually keeps
+// the same media in play.
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId !== 0) return;
   if (details.transitionQualifiers?.includes("server_redirect")) return;
@@ -123,8 +118,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     sendResponse({ ok: false });
   })();
-  // Keeps the message channel open for the async reply above.
-  return true;
+  return true; // keeps the channel open for the async reply
+
 });
 
 chrome.runtime.onInstalled.addListener(() => {

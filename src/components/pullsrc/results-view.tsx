@@ -124,8 +124,7 @@ export function ResultsView({
     <div
       className={cn(
         "mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-8",
-        // The bar is fixed, so the last row of cards needs room or it sits
-        // underneath it.
+        // The bar is fixed, so the last row needs room to clear it.
         selectedAssets.length > 0 && "pb-28",
       )}
     >

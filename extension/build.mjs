@@ -3,8 +3,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// esbuild rather than Vite: the extension has three independent entry points
-// and no framework, so a bundler config of ten lines does the whole job.
+// esbuild, not Vite: no framework and two entry points, so ten lines suffice.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = resolve(here, "src");
@@ -22,8 +21,7 @@ const options = {
   outdir: out,
   bundle: true,
   format: "esm",
-  // model-viewer is only imported when a page has 3D assets; splitting keeps
-  // that ~1MB out of the panel's initial load.
+  // Keeps model-viewer's ~1MB out of the panel's initial load.
   splitting: true,
   chunkNames: "chunks/[name]-[hash]",
   target: "chrome116",
@@ -31,11 +29,9 @@ const options = {
   sourcemap: watch ? "inline" : false,
   minify: !watch,
   logLevel: "info",
-  // Mirrors the "@/*" path alias in tsconfig so extension code can import the
-  // site's parsers directly instead of keeping a second copy of them.
+  // Mirrors tsconfig's "@/*" so the site's parsers are imported, not copied.
   alias: { "@": resolve(here, "..", "src") },
-  // playwright-core is pulled in transitively by the server helpers but never
-  // reached at run time in the extension; stub it so it can't break the bundle.
+  // Pulled in transitively by the server helpers, never reached at run time.
   external: ["playwright-core", "node:fs", "node:path"],
 };
 

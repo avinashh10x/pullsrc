@@ -1,10 +1,8 @@
 import { headSafely, mapWithConcurrency } from "./server/http";
 import { isBareSegment, probeMp4Track } from "./server/media-probe";
 
-// Shared by the web app's scan route and the extension's panel. This logic is
-// subtle and was arrived at by probing real files — a second copy would drift,
-// and the failure mode is silent (a video that plays without sound), so both
-// callers use this one.
+// Shared by the scan route and the extension panel. A second copy would drift,
+// and the failure mode is silent: a video that plays without sound.
 
 export interface TrackCandidate {
   url: string;
@@ -35,11 +33,9 @@ function cdnGroupOf(url: string): string {
 }
 
 /**
- * URL-based classification can only guess from filenames, which works for CDNs
- * that name tracks honestly and fails completely for ones that don't — fbcdn
- * serves picture, sound and a bare DASH fragment as three identical-looking
- * `AQ…mp4` URLs. Reading each file's `hdlr` box settles it, then picture-only
- * tracks from one CDN are folded into a single asset with the sound attached.
+ * Filenames can't distinguish fbcdn's three identical-looking `AQ…mp4` URLs, so
+ * each file's `hdlr` box decides; picture-only tracks from one CDN then fold
+ * into a single asset with the sound attached.
  */
 export async function reconcileTracks<T extends TrackCandidate>(
   videos: T[],
@@ -65,7 +61,7 @@ export async function reconcileTracks<T extends TrackCandidate>(
   for (const video of videos) {
     const tracks = tracksByUrl.get(video.url);
     if (!tracks) {
-      // No verdict: either not probed, or `moov` sits past the probe window.
+      // Not probed, or `moov` sits past the probe window.
       unknown.push(video);
       continue;
     }
@@ -73,8 +69,7 @@ export async function reconcileTracks<T extends TrackCandidate>(
     else keptVideos.push(video);
   }
 
-  // A probe that found no `moov` at all on a URL sitting beside tracks that did
-  // is a bare DASH fragment — unplayable alone, so it's noise, not an asset.
+  // No `moov` where its neighbours had one means a bare DASH fragment: noise.
   const anyProbeSucceeded = probes.some(Boolean);
   const carriedUnknown = anyProbeSucceeded
     ? await (async () => {
@@ -91,10 +86,8 @@ export async function reconcileTracks<T extends TrackCandidate>(
   const allVideos = [...keptVideos, ...carriedUnknown];
   const allAudio = [...audio, ...promotedAudio];
 
-  // Silent picture tracks from one host are renditions of the same video — a
-  // reel arrives as a 3 MB and a 12 MB copy of identical footage. Presenting
-  // them as separate finds is noise, so the biggest becomes the asset and the
-  // rest become quality options on it.
+  // A reel arrives as a 3 MB and a 12 MB copy of the same footage, so the
+  // biggest becomes the asset and the rest become quality options.
   const silent = allVideos.filter((video) => tracksByUrl.get(video.url)?.silent);
   if (silent.length === 0) return { videos: allVideos, audio: allAudio };
 

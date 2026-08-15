@@ -1,10 +1,8 @@
 import { resolveHls, type HlsSegment } from "@/lib/pullsrc/server/hls";
 import type { Asset } from "@/lib/pullsrc/types";
 
-// The web app has to assemble streams inside a 60-second serverless function
-// and proxy every byte. Here there is no function and no proxy: fetches run in
-// the user's own session, so signed CDN URLs are still valid, cookies are
-// attached, and a long video is just a long download.
+// No serverless function and no proxy here: fetches run in the user's session,
+// so signed URLs stay valid and a long video is just a long download.
 
 export interface Progress {
   done: number;
@@ -32,7 +30,7 @@ async function fetchSegment(segment: HlsSegment): Promise<Uint8Array> {
   if (!res.ok) throw new Error(`segment responded ${res.status}`);
 
   const bytes = new Uint8Array(await res.arrayBuffer());
-  // A byte range is a request the origin may ignore; slice when it does.
+  // Some origins ignore Range and send the whole file; slice when they do.
   if (segment.range && res.status !== 206) {
     const { offset, length } = segment.range;
     return bytes.slice(offset, offset + length);
@@ -53,8 +51,7 @@ export async function assembleStream(
   const extension = media.container === "fmp4" ? "mp4" : "ts";
   const type = media.container === "fmp4" ? "video/mp4" : "video/mp2t";
 
-  // When every segment is a byte range into one file, that file is already a
-  // complete fMP4 — fetch it whole rather than reassembling it piece by piece.
+  // One file addressed by ranges is already a complete fMP4; fetch it whole.
   if (media.wholeFileUrl) {
     onProgress?.({ done: 0, total: 1, label: "Downloading" });
     const res = await fetch(media.wholeFileUrl, { credentials: "include" });
@@ -83,11 +80,7 @@ function baseName(asset: Asset & { url: string }): string {
   return sanitize(asset.name).replace(/\.m3u8$/i, "");
 }
 
-/**
- * Saves one asset. Streams are assembled first; everything else is handed
- * straight to the browser's download manager, which reuses the page session
- * and so keeps signed URLs valid.
- */
+/** Streams get assembled first; the rest go straight to the download manager. */
 export async function downloadAsset(
   asset: Asset,
   onProgress?: (progress: Progress) => void,
@@ -105,7 +98,7 @@ export async function downloadAsset(
       url,
       filename: `PullSRC/${folder}/${baseName(asset)}.${extension}`,
     });
-    // The blob has to outlive the handoff to the download manager.
+    // Must outlive the handoff to the download manager.
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return;
   }
@@ -115,7 +108,7 @@ export async function downloadAsset(
     filename: `PullSRC/${folder}/${sanitize(asset.name)}`,
   });
 
-  // A split stream's sound is a second real file; without it the video is silent.
+  // Without its partner track the video is silent.
   if (asset.category === "video" && asset.audioUrl && asset.audioName) {
     await chrome.downloads.download({
       url: asset.audioUrl,

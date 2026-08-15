@@ -7,7 +7,7 @@ export default function Home() {
     <main className="flex w-full flex-1 flex-col items-center">
       <script
         type="application/ld+json"
-        // Content is a literal built in seo.ts, never user input.
+        // A literal built in seo.ts, never user input.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(buildJsonLd()) }}
       />
       <LandingHero />

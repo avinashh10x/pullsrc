@@ -1,8 +1,6 @@
 import { LandingInput } from "@/components/pullsrc/landing-input"
 
-// Server-rendered so the h1, the sub-copy, and the badge are in the initial
-// HTML for crawlers that don't execute JavaScript. Only the input itself is a
-// client component.
+// Server-rendered so the h1 and copy are in the initial HTML for crawlers.
 export function LandingHero() {
   return (
     <section className="flex w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_50%_18%,rgba(15,106,91,0.16),transparent_34%),linear-gradient(180deg,#f7fffb_0%,#eef8f3_52%,#ffffff_100%)] px-4 py-16 min-h-[calc(100svh-4rem)]">

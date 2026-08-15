@@ -1,7 +1,6 @@
 import type { AssetCategory } from "@/lib/pullsrc/types";
 
-// Inline SVG paths matching the lucide icons the site uses, so the panel reads
-// as the same product without pulling a whole icon package into the bundle.
+// Lucide paths, inlined so the panel matches the site without the package.
 const PATHS: Record<AssetCategory | "download" | "copy", string> = {
   images:
     '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',

@@ -381,8 +381,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       meta = await headSafely(raw.url);
     }
 
-    // og:video and canonical tags point at watch pages, not files. Without this
-    // a YouTube scan lists "aqz-KE-bpKQ.html" as a 0-byte video.
+    // og:video points at watch pages, not files.
     if (!raw.isStreaming && meta?.contentType?.includes("text/html")) return;
 
     // Extract file type from URL extension first, then Content-Type if no extension
@@ -541,10 +540,8 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     pendingMedia.push(emitModel(model));
 
   // --- images + logo candidate ---------------------------------------------
-  // YouTube's own media is unreachable by design (POST /videoplayback carrying
-  // application/vnd.yt-ump), so the poster frame is the one real asset a
-  // YouTube embed can contribute. Awaited here so it rides along with the rest
-  // of the images instead of arriving after the category closes.
+  // YouTube's media is unreachable, so the poster frame is all an embed can
+  // give. Awaited here so it ships with the images rather than after them.
   const youtubeEmbeds = await youtubeDone;
   if (youtubeEmbeds.length > 0) {
     send({
@@ -572,9 +569,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
       ...(ogImage ? [ogImage] : []),
       ...scannedImages,
     ];
-    // A YouTube watch page sets og:image to the same poster frame the embed
-    // resolver returns, so the list needs one dedup pass rather than the
-    // single ogImage check it used to do.
+    // A watch page's og:image is the same poster frame the resolver returns.
     const seen = new Set<string>();
     return merged.filter((img) =>
       seen.has(img.url) ? false : (seen.add(img.url), true),
@@ -767,8 +762,7 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     (candidate) => !embedGroupKeys.has(mediaGroupKey(candidate.url)),
   );
 
-  // Filenames alone can't tell picture from sound on every CDN, so settle it
-  // against the actual files before anything is emitted.
+  // Settle picture vs sound against the real files before emitting.
   const reconciled = await reconcileTracks(
     groupMediaCandidates(unclaimedVideos),
     groupMediaCandidates(unclaimedAudio),

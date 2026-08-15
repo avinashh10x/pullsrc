@@ -11,9 +11,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/scan",
   },
-  // Results depend entirely on ?url=, so every variant of this route is a
-  // different thin page about someone else's site. Nothing here should be
-  // indexed, but crawlers are still welcome to follow links back home.
+  // Every ?url= variant is a thin page about someone else's site.
   robots: {
     index: false,
     follow: true,

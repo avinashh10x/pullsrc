@@ -1,9 +1,7 @@
 import { fetchTextSafely, resolveUrl } from "./http";
 
-// HLS playlists come in two layers: a master listing renditions, and a media
-// playlist listing the actual segments. Both are plain text, so parsing them
-// is cheap — and it's the only way to turn "here's an m3u8" into a file a
-// person can actually keep.
+// A master playlist lists renditions; a media playlist lists segments. Parsing
+// both is the only way to turn an m3u8 into a file someone can keep.
 
 export interface HlsByteRange {
   offset: number;
@@ -18,11 +16,9 @@ export interface HlsSegment {
 export interface HlsMedia {
   init: HlsSegment | null;
   segments: HlsSegment[];
-  // fMP4 segments concatenate into a valid MP4; MPEG-TS ones concatenate into
-  // a .ts, which plays in VLC but isn't an MP4 and shouldn't be named like one.
+  // fMP4 concatenates into a valid MP4; MPEG-TS into a .ts (VLC, not MP4).
   container: "fmp4" | "ts";
-  // Set when every segment is a byte range into one file. That file is already
-  // a complete fMP4, so it can be fetched whole instead of segment by segment.
+  // Every segment is a range into one file, which is already a complete fMP4.
   wholeFileUrl: string | null;
 }
 
@@ -61,8 +57,7 @@ export function parseMasterPlaylist(text: string, base: string): HlsVariant[] {
   return out.sort((a, b) => b.bandwidth - a.bandwidth);
 }
 
-// "#EXT-X-BYTERANGE:<length>[@<offset>]" — a missing offset means "directly
-// after the previous range in the same file", so parsing has to be positional.
+// "<length>[@<offset>]" — a missing offset means "after the previous range".
 function parseRange(
   spec: string | undefined,
   cursorFor: (url: string) => number,
@@ -121,9 +116,8 @@ export function parseMediaPlaylist(text: string, base: string): HlsMedia {
     ? "ts"
     : "fmp4";
 
-  // Reddit and other CMAF packagers publish one file and address it purely by
-  // byte range. Recognising that turns dozens of ranged requests into a single
-  // clean download of a file that is already a valid MP4.
+  // Reddit and other CMAF packagers publish one file addressed purely by byte
+  // range; spotting that turns dozens of requests into one clean download.
   const urls = new Set(segments.map((segment) => segment.url));
   if (init) urls.add(init.url);
   const everySegmentRanged =
@@ -134,10 +128,7 @@ export function parseMediaPlaylist(text: string, base: string): HlsMedia {
   return { init, segments, container, wholeFileUrl };
 }
 
-/**
- * Resolves an m3u8 URL down to the concrete segment list for its best
- * rendition, following one level of master playlist if present.
- */
+/** Resolves an m3u8 to its best rendition's segments, following one master. */
 export async function resolveHls(url: string): Promise<HlsMedia | null> {
   const text = await fetchTextSafely(url, { timeoutMs: 8000, maxBytes: 2_000_000 });
   if (!text || !text.includes("#EXTM3U")) return null;

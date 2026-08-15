@@ -3,8 +3,7 @@ import path from "node:path";
 
 import type { Browser, Page } from "playwright-core";
 
-// Classification lives in a platform-free module so the browser extension can
-// apply exactly the same rules to chrome.webRequest events.
+// Shared with the extension, which applies the same rules to webRequest events.
 import {
   canonicalMediaUrl,
   classifyMediaUrl as classify,
@@ -86,10 +85,8 @@ async function scrollThroughPage(page: Page) {
 const MAX_HOVER_TARGETS = 16;
 const HOVER_SETTLE_MS = 150;
 
-// Interface sound effects are almost never fetched at load — the file is
-// requested on the first hover or pointer-down, so a page full of them scans as
-// though it were silent. Nudging the obvious interactive elements is what makes
-// a site like byavi.in report its /sfx/*.wav files at all.
+// Sound effects are fetched on first hover or pointer-down, never at load, so
+// an SFX-rich page scans as silent unless it gets nudged.
 async function hoverInteractiveElements(page: Page) {
   let handles: Awaited<ReturnType<Page["$$"]>>;
   try {
@@ -106,12 +103,11 @@ async function hoverInteractiveElements(page: Page) {
       await handle.hover({ timeout: 600 });
       await page.waitForTimeout(HOVER_SETTLE_MS);
     } catch {
-      // Off-screen, detached or covered — not worth reporting.
+      // Off-screen, detached or covered.
     }
   }
 
-  // Some libraries only arm their audio after a real gesture, because browsers
-  // won't let an AudioContext start without one.
+  // Browsers won't start an AudioContext without a real gesture.
   await page.mouse.move(8, 8).catch(() => {});
   await page.mouse.down().catch(() => {});
   await page.mouse.up().catch(() => {});
@@ -323,8 +319,7 @@ export async function captureNetworkMedia(
     if (session.note) onDegraded?.(session.note);
 
     page.on("response", (response) => {
-      // Canonicalise before the dedup check, so a dozen ranged slices of one
-      // file register as the single asset they actually are.
+      // Before dedup, so ranged slices of one file register as one asset.
       const url = canonicalMediaUrl(response.url());
       if (seen.has(url)) return;
 

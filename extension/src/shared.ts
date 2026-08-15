@@ -1,8 +1,7 @@
 import type { MediaKind } from "@/lib/pullsrc/media-classify";
 
-// Wire format between the service worker, the content script and the panel.
-// Kept in one file because a mismatch between the three is invisible until
-// runtime — there is no shared type-check across an extension's contexts.
+// Wire format between worker, content script and panel. One file, because a
+// mismatch between the three is invisible until runtime.
 
 export interface CapturedMedia {
   url: string;

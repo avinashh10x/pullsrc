@@ -1,7 +1,5 @@
-// Single source of truth for the marketing copy that has to exist twice: once
-// as visible text on the landing page and once inside JSON-LD. Keeping both
-// reads off the same arrays means the rendered FAQ and the FAQPage schema can
-// never drift apart — Google flags schema that isn't on the page.
+// One source for copy that exists twice: on the page and in JSON-LD. Google
+// flags schema that isn't on the page, so the two must not drift.
 
 export const SITE_URL = "https://pullsrc.byavi.in";
 

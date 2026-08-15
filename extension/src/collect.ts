@@ -1,12 +1,9 @@
 import type { PageSnapshot } from "./shared";
 
 /**
- * Runs inside the inspected page via chrome.scripting.executeScript({ func }).
- *
- * Chrome serialises this with Function.prototype.toString and re-parses it in
- * the page, so it must be completely self-contained: no imports, no references
- * to anything in this module's scope. Nested helpers are fine; anything hoisted
- * out would be undefined at run time.
+ * Runs inside the page via executeScript({ func }). Chrome serialises this with
+ * toString(), so it must be self-contained — no imports, no outer-scope refs.
+ * Nested helpers are fine; anything hoisted out is undefined at run time.
  */
 export function collectSnapshot(): PageSnapshot {
   const IMAGE_RE = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff|heif|heic|avif)(?:\?|#|$)/i;
@@ -49,8 +46,7 @@ export function collectSnapshot(): PageSnapshot {
 
   // --- images -------------------------------------------------------------
   for (const img of Array.from(document.images)) {
-    // currentSrc is what the browser actually chose from a srcset, which beats
-    // guessing the best candidate the way HTML parsing has to.
+    // currentSrc is the candidate the browser actually chose from the srcset.
     const chosen = img.currentSrc || img.src;
     const hinted =
       LOGO_RE.test(img.className || "") ||
@@ -82,15 +78,14 @@ export function collectSnapshot(): PageSnapshot {
   if (ogImage) push(ogImage.content, "img", "social preview");
 
   // --- CSS background images ---------------------------------------------
-  // Bounded: a large page has tens of thousands of nodes and every one costs a
-  // style resolution.
+  // Bounded: every node here costs a style resolution.
   const styled = Array.from(document.querySelectorAll("*")).slice(0, 4000);
   const colorCounts = new Map<string, number>();
 
   function noteColor(value: string): void {
     const match = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(value);
     if (!match) return;
-    // Fully transparent values are layout artefacts, not part of the palette.
+    // Transparent values are layout artefacts, not palette.
     if (match[4] !== undefined && Number(match[4]) < 0.1) return;
     const hex =
       "#" +
@@ -137,8 +132,7 @@ export function collectSnapshot(): PageSnapshot {
   }
 
   // --- everything the page actually loaded --------------------------------
-  // The resource timeline catches fonts, sprites and lazily fetched media that
-  // never appear as an attribute anywhere in the DOM.
+  // Catches fonts, sprites and lazy media that never appear as a DOM attribute.
   const fontUrls: string[] = [];
   for (const entry of performance.getEntriesByType("resource")) {
     const url = entry.name;

@@ -1,8 +1,6 @@
 import { EXTRACTED, FAQ, HOW_IT_WORKS } from "@/lib/pullsrc/seo"
 
-// Everything below the hero. Fully server-rendered: this is the only indexable
-// prose on the site, so it has to be in the HTML a crawler gets, and it is the
-// same copy the JSON-LD in seo.ts describes.
+// The only indexable prose on the site, and the same copy seo.ts describes.
 export function LandingContent() {
   return (
     <div className="w-full bg-background">

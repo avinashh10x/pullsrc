@@ -7,8 +7,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Same ceiling as the scan route — a Hobby function gets 60s and no more, so
-// the caps below exist to fail with a clear message instead of a truncated file.
+// A Hobby function gets 60s; the caps below fail loudly rather than truncate.
 export const maxDuration = 60;
 
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -24,8 +23,7 @@ function withExtension(name: string, ext: string): string {
   return `${match ? name.slice(0, match.index) : name}.${ext}`;
 }
 
-// A byte range is a request the origin may ignore: some CDNs answer 200 with
-// the whole file. Slicing on a 200 keeps the output correct either way.
+// Some origins ignore Range and answer 200 with the whole file; slice on 200.
 async function fetchSegment(
   segment: HlsSegment,
   referer: string | null,
@@ -96,8 +94,7 @@ export async function GET(request: Request) {
     extension,
   );
 
-  // Every segment is a range into one file, which is itself a complete fMP4 —
-  // stream that straight through rather than reassembling it piece by piece.
+  // One file, addressed by ranges, already a complete fMP4 — stream it whole.
   if (media.wholeFileUrl) {
     const res = await fetchWithTimeout(media.wholeFileUrl, {
       timeoutMs: 20000,
@@ -129,8 +126,7 @@ export async function GET(request: Request) {
           const bytes = await fetchSegment(segment, referer);
           written += bytes.length;
           if (written > MAX_BYTES) {
-            // Nothing useful can be salvaged from a half file, so error rather
-            // than let the browser save a broken one.
+            // A half file is useless; error rather than save something broken.
             controller.error(
               new Error("Stream exceeded the maximum assembled size"),
             );

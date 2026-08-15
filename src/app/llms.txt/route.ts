@@ -1,10 +1,7 @@
 import { EXTRACTED, FAQ, HOW_IT_WORKS, SITE_URL } from "@/lib/pullsrc/seo";
 
-// /llms.txt — the emerging convention for handing an answer engine a clean,
-// markdown summary of a site instead of making it infer one from rendered
-// HTML. Generated from seo.ts so it can't drift from the page or the JSON-LD.
-
-// Nothing here reads the request, so it can be baked at build time.
+// A markdown summary for answer engines, generated from seo.ts so it can't
+// drift from the page. Nothing reads the request, so it bakes at build time.
 export const dynamic = "force-static";
 
 export function GET() {

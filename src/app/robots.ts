@@ -2,9 +2,7 @@ import type { MetadataRoute } from "next";
 
 import { SITE_URL } from "@/lib/pullsrc/seo";
 
-// /scan is a tool surface keyed on ?url=, so it's an unbounded set of
-// near-identical pages with no content of its own. Keeping crawlers off it
-// protects crawl budget; the page itself also sends noindex.
+// /scan is an unbounded set of near-identical ?url= pages; it also sends noindex.
 const DISALLOW = ["/api/", "/scan"];
 
 export default function robots(): MetadataRoute.Robots {
@@ -16,9 +14,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: DISALLOW,
       },
       {
-        // Answer engines, listed explicitly: being quoted in an AI answer is a
-        // real acquisition channel for a tool like this, and the *-Extended
-        // tokens are the opt-in/opt-out signal for training and grounding.
+        // Answer engines, explicit: being quoted in an AI answer is real traffic.
         userAgent: [
           "GPTBot",
           "OAI-SearchBot",

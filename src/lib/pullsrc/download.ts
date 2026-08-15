@@ -1,9 +1,8 @@
 import type { Asset, MediaVariant } from "./types"
 
-// Two proxies serve downloads and the choice between them is not cosmetic:
-// /api/download streams one existing file, /api/stream assembles an HLS
-// playlist into one. Both the single-asset buttons and the ZIP export need to
-// make the same call, so the rule lives here rather than in each of them.
+// /api/download streams an existing file; /api/stream assembles an HLS
+// playlist into one. Card buttons and the ZIP export must agree, so the choice
+// lives here.
 
 interface Downloadable {
   url: string
@@ -16,7 +15,7 @@ interface Downloadable {
 export function downloadHref(item: Downloadable, referer: string): string {
   const params = new URLSearchParams({ url: item.url, name: item.name, referer })
   if (item.wasStreaming) return `/api/stream?${params}`
-  // Lets the proxy recognise an expired link that now returns only a header.
+  // Lets the proxy spot an expired link that now returns only a header.
   if (item.sizeBytes) params.set("bytes", String(item.sizeBytes))
   return `/api/download?${params}`
 }
@@ -54,8 +53,7 @@ export function assetDownloads(
     label: "file",
   }
 
-  // A split stream's sound is a second real file. Offering only the picture
-  // would hand someone a silent video and no way to notice why.
+  // Without the sound track the picture is silent, with no hint why.
   if (asset.category === "video" && asset.audioUrl && asset.audioName) {
     return [
       { ...primary, label: "video" },

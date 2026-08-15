@@ -1,7 +1,5 @@
-// Deciding what a URL is, with no dependency on how it was observed. The web
-// app feeds this from Playwright responses; the extension feeds it from
-// chrome.webRequest. Keeping it free of Node and Playwright imports is what
-// lets both do that, so don't reach for anything platform-specific in here.
+// What a URL is, independent of how it was observed: the app feeds this from
+// Playwright, the extension from chrome.webRequest. Keep it platform-free.
 
 export type MediaKind = "video" | "audio" | "model3d";
 
@@ -28,12 +26,9 @@ const SEGMENT_EXT = /\.(ts|m4s)(?:\?|#|$)/i;
 const AUDIO_ONLY_HINT =
   /(?:[._-]audio|audio[._-]|\/audio\/).*(?:m3u8|mpd|mp4|m4a|aac|opus)(?:\?|#|$)/i;
 
-// Facebook/Instagram players don't use Range headers — they put the window in
-// the query string and pull a file down in a dozen `bytestart`/`byteend` slices.
-// Captured verbatim, each slice looks like a separate asset, and whichever one
-// arrives first wins the dedup: usually a 248-byte fragment from the middle of
-// the file. Dropping those two parameters collapses every slice back onto the
-// one URL that serves the whole file.
+// Instagram puts its byte window in the query string, not a Range header, so
+// one file arrives as a dozen slices and dedup keeps whichever landed first —
+// usually a 248-byte fragment. Dropping these collapses them onto one URL.
 const RANGE_QUERY_PARAMS = ["bytestart", "byteend"];
 
 export function canonicalMediaUrl(url: string): string {
@@ -52,10 +47,8 @@ export function canonicalMediaUrl(url: string): string {
   }
 }
 
-// YouTube delivers media by POSTing to /videoplayback and reading back
-// `application/vnd.yt-ump`, so a captured googlevideo URL is never a file
-// anyone can fetch — and youtube.com itself serves placeholder manifests that
-// are equally useless. Listing either produces an asset that always fails.
+// YouTube POSTs to /videoplayback and reads back `application/vnd.yt-ump`, so
+// a captured googlevideo URL is never a fetchable file.
 const UNFETCHABLE_MEDIA_HOST =
   /(?:^|\.)(?:googlevideo\.com|youtube\.com|youtube-nocookie\.com)$/i;
 
@@ -63,9 +56,8 @@ export function classifyMediaUrl(
   url: string,
   contentType: string,
 ): MediaClassification | null {
-  // Extensions must be matched against the path alone. Against the whole URL,
-  // a hostname ending in a new gTLD reads as a filename — `https://studio.blend`
-  // was being caught by MODEL_EXT and listed as a 3D model.
+  // Match the path, not the whole URL: `https://studio.blend` was being read
+  // as a .blend file and listed as a 3D model.
   let path: string;
   try {
     const parsed = new URL(url);
@@ -77,33 +69,25 @@ export function classifyMediaUrl(
 
   if (SEGMENT_EXT.test(path)) return null;
 
-  // CRITICAL: Reject image files even if server claims they're video/audio
-  // This prevents .evif and other images from appearing in wrong tabs
+  // Reject images even when the server calls them video/audio (.evif etc).
   if (IMAGE_EXT.test(path)) return null;
 
-  // No filename-based filtering of "UI sounds" here. An earlier version dropped
-  // paths like /sfx/, click.mp3 and whoosh.mp3 to hide YouTube's four player
-  // beeps — but those are exactly the sound effects a designer comes here for,
-  // and YouTube is already excluded by host above. Blocking by host is precise;
-  // blocking by filename guesses, and it guessed wrong.
+  // Deliberately no filename filter for "UI sounds": /sfx/ and whoosh.mp3 are
+  // exactly what people come here for. YouTube's beeps go by host, above.
 
   const isManifest =
     MANIFEST_EXT.test(path) || /mpegurl|dash\+xml/i.test(contentType);
 
-  // Audio-only hint takes precedence
   if (AUDIO_ONLY_HINT.test(path))
     return { kind: "audio", isStreaming: isManifest };
 
-  // Manifest (HLS/DASH) streaming
   if (isManifest) return { kind: "video", isStreaming: true };
 
-  // PRIORITIZE FILE EXTENSION over content-type to prevent misclassification
-  // Only use content-type as fallback if no extension recognized
+  // Extension beats content-type: servers mislabel more often than paths lie.
   if (VIDEO_EXT.test(path)) return { kind: "video", isStreaming: false };
   if (AUDIO_EXT.test(path)) return { kind: "audio", isStreaming: false };
   if (MODEL_EXT.test(path)) return { kind: "model3d", isStreaming: false };
 
-  // Fallback: use content-type only when extension isn't recognized
   if (contentType.startsWith("video/"))
     return { kind: "video", isStreaming: false };
   if (contentType.startsWith("audio/"))

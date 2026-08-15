@@ -8,8 +8,7 @@ function hasDownloadableUrl(
   asset: Asset
 ): asset is Asset & { url: string } {
   if (asset.category === "colors") return false
-  // Streams are no longer excluded — /api/stream assembles them into a file.
-  // DRM still is, since there is nothing to assemble.
+  // Streams are assembled by /api/stream; only DRM has nothing to assemble.
   if ((asset.category === "video" || asset.category === "audio") && asset.drmProtected) return false
   return "url" in asset
 }
@@ -31,9 +30,8 @@ export async function buildExportZip(
   const downloadable = assets.filter(hasDownloadableUrl)
 
   await Promise.all(
+    // A split stream contributes two files, so one asset can be several entries.
     downloadable.flatMap((asset) =>
-      // A split stream contributes two files, so one asset can be several
-      // entries in the zip.
       assetDownloads(asset, result.pageUrl).map(async (download) => {
         try {
           const res = await fetch(download.href)
