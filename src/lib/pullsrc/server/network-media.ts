@@ -204,6 +204,20 @@ const MULTI_PROCESS_ONLY_ARGS = new Set([
   "--in-process-gpu",
 ]);
 
+// Which strategy a given function size supports doesn't change between
+// invocations, so once one works, try it first next time. Crashing a browser
+// to re-learn the same answer costs seconds off a budget that's already tight
+// on cold start. Module state, so it lasts as long as the warm container.
+let provenStrategy: LaunchStrategy | null = null;
+
+function strategiesToTry(): LaunchStrategy[] {
+  if (!provenStrategy) return SERVERLESS_STRATEGIES;
+  return [
+    provenStrategy,
+    ...SERVERLESS_STRATEGIES.filter((s) => s.label !== provenStrategy!.label),
+  ];
+}
+
 // The package finds its own bin/ via import.meta.url, which Next muddies by
 // symlinking externalised packages into .next/node_modules under a hashed
 // name. Locate the archives ourselves and hand over an explicit path, so a
@@ -252,7 +266,7 @@ async function openServerlessSession(): Promise<BrowserSession> {
 
   const failures: string[] = [];
 
-  for (const strategy of SERVERLESS_STRATEGIES) {
+  for (const strategy of strategiesToTry()) {
     let browser: Browser | null = null;
     try {
       // three.js and friends only request their .glb once a WebGL context
@@ -275,6 +289,7 @@ async function openServerlessSession(): Promise<BrowserSession> {
       const context = await browser.newContext(PAGE_OPTIONS);
       const page = await context.newPage();
 
+      provenStrategy = strategy;
       return {
         browser,
         page,
