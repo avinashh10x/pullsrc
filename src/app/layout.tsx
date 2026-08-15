@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/pullsrc/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { SITE_URL } from "@/lib/pullsrc/seo";
 import "./globals.css";
 
 const erode = localFont({
@@ -32,8 +33,12 @@ const DESCRIPTION =
   "Paste any webpage URL and instantly extract images, fonts, colors, videos, and 3D models with credit details for your next design or build.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://pullsrc.byavi.in"),
+  metadataBase: new URL(SITE_URL),
   applicationName: "PullSRC",
+  authors: [{ name: "Avi", url: "https://byavi.in" }],
+  creator: "Avi",
+  publisher: "Avi",
+  category: "technology",
   title: {
     default: `PullSRC — ${TAGLINE}`,
     template: "%s — PullSRC",
@@ -64,6 +69,7 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     siteName: "PullSRC",
     type: "website",
+    locale: "en_US",
     url: "/",
     images: [
       {
@@ -91,6 +97,11 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
     },
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  colorScheme: "light",
 };
 
 export default function RootLayout({

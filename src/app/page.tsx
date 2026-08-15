@@ -1,24 +1,17 @@
-"use client"
-
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-
-import { HeroBackground } from "@/components/pullsrc/hero-background"
-import { LandingInput } from "@/components/pullsrc/landing-input"
-import { normalizeUrl } from "@/lib/pullsrc/url"
+import { LandingHero } from "@/components/pullsrc/landing-hero"
+import { LandingContent } from "@/components/pullsrc/landing-content"
+import { buildJsonLd } from "@/lib/pullsrc/seo"
 
 export default function Home() {
-  const router = useRouter()
-  const [url, setUrl] = useState("")
-
-  const handleSubmit = () => {
-    if (!url.trim()) return
-    router.push(`/scan?url=${encodeURIComponent(normalizeUrl(url))}`)
-  }
-
   return (
-    <HeroBackground>
-      <LandingInput value={url} onChange={setUrl} onSubmit={handleSubmit} />
-    </HeroBackground>
+    <main className="flex w-full flex-1 flex-col items-center">
+      <script
+        type="application/ld+json"
+        // Content is a literal built in seo.ts, never user input.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(buildJsonLd()) }}
+      />
+      <LandingHero />
+      <LandingContent />
+    </main>
   )
 }
