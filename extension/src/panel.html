@@ -23,15 +23,19 @@
     <nav id="tabs" class="tabs" hidden></nav>
     <main id="list" class="grid"></main>
 
-    <div id="bulk" class="bulk" hidden>
-      <span id="bulk-count" class="bulk-count"></span>
-      <button id="bulk-clear" class="btn ghost tiny" type="button">Clear</button>
-      <button id="bulk-save" class="btn tiny" type="button">Download</button>
-    </div>
-
+    <!-- One docked bottom area. The selection row lives inside it rather than
+         floating, so it always appears in the same place no matter which tab
+         is open or how much content there is. -->
     <footer id="foot" class="foot" hidden>
-      <button id="credit" class="btn ghost" type="button">Credit sheet</button>
-      <button id="zip" class="btn" type="button">Save all as ZIP</button>
+      <div id="bulk" class="bulk" hidden>
+        <span id="bulk-count" class="bulk-count"></span>
+        <button id="bulk-clear" class="btn ghost tiny" type="button">Clear</button>
+        <button id="bulk-save" class="btn tiny" type="button">Download</button>
+      </div>
+      <div class="foot-main">
+        <button id="credit" class="btn ghost" type="button">Credit sheet</button>
+        <button id="zip" class="btn" type="button">Save all as ZIP</button>
+      </div>
     </footer>
 
     <script type="module" src="panel.js"></script>

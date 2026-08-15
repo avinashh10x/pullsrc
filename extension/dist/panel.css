@@ -405,26 +405,49 @@ body {
   border-color: var(--primary);
 }
 
-/* ---------- footer ---------- */
+/* ---------- docked bottom bar ---------- */
+/* Fixed, full width, one solid surface. The selection row is a second row
+   inside it — never a floating pill that lands in whatever gap the content
+   happens to leave. */
 .foot {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 12;
   display: flex;
-  gap: 0.4rem;
-  padding: 0.5rem 0.75rem;
+  flex-direction: column;
   background: var(--background);
   border-top: 1px solid var(--border);
 }
 
-.foot .btn {
+.foot-main {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.foot-main .btn {
   flex: 1;
 }
 
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
 
-/* The bulk bar floats above the footer, so the grid needs extra room or its
-   last row sits underneath it. */
+.bulk-count {
+  flex: 1;
+  font-size: 0.76rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The grid must clear whichever height the docked bar currently has. */
 body.has-selection {
-  padding-bottom: 6.4rem;
+  padding-bottom: 6.2rem;
 }

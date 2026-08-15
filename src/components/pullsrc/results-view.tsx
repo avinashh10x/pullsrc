@@ -121,7 +121,14 @@ export function ResultsView({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-8">
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-8",
+        // The bar is fixed, so the last row of cards needs room or it sits
+        // underneath it.
+        selectedAssets.length > 0 && "pb-28",
+      )}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

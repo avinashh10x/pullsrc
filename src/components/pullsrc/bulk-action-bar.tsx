@@ -33,7 +33,11 @@ export function BulkActionBar({
   }
 
   return (
-    <div className="pointer-events-none sticky bottom-4 z-20 flex justify-center px-4">
+    // Fixed rather than sticky. As the last child of a flex column, a sticky
+    // bar only pins once the page outgrows the viewport — on a short result
+    // set it just sat in whatever gap was left after the cards, which read as
+    // unplaced. Fixed gives it one home at the bottom of the screen always.
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4">
       <Card className="pointer-events-auto flex-row items-center gap-3 p-2 pl-4 shadow-lg ring-foreground/15">
         <span className="text-sm font-medium tabular-nums">
           {selectedAssets.length} selected
