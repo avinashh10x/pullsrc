@@ -32,10 +32,22 @@ let active: AssetCategory | "all" = "all";
 const selected = new Set<string>();
 let scannedUrl = "";
 
-// ~1MB, so only loaded when a page actually has 3D assets.
+// ~1MB, so only loaded when a page actually has 3D assets. Its Draco and KTX2
+// decoders default to www.gstatic.com — remotely hosted code, which MV3 forbids
+// — so they are repointed at the copies bundled under vendor/.
 let modelViewerLoad: Promise<unknown> | null = null;
 function ensureModelViewer(): Promise<unknown> {
-  modelViewerLoad ??= import("@google/model-viewer").catch(() => null);
+  modelViewerLoad ??= import("@google/model-viewer")
+    .then((mod) => {
+      const element = mod.ModelViewerElement as unknown as {
+        dracoDecoderLocation: string;
+        ktx2TranscoderLocation: string;
+      };
+      element.dracoDecoderLocation = chrome.runtime.getURL("vendor/draco/");
+      element.ktx2TranscoderLocation = chrome.runtime.getURL("vendor/ktx2/");
+      return mod;
+    })
+    .catch(() => null);
   return modelViewerLoad;
 }
 

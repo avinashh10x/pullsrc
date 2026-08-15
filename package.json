@@ -9,7 +9,8 @@
     "lint": "eslint",
     "build:ext": "node extension/build.mjs",
     "dev:ext": "node extension/build.mjs --watch",
-    "icons:ext": "node extension/make-icons.mjs"
+    "icons:ext": "node extension/make-icons.mjs",
+    "pack:ext": "npm run build:ext && node extension/pack.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

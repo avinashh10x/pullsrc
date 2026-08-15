@@ -35,7 +35,21 @@ const options = {
   external: ["playwright-core", "node:fs", "node:path"],
 };
 
+// model-viewer defaults its Draco and KTX2 decoders to www.gstatic.com. That is
+// remotely hosted code, which MV3 forbids and which the Web Store asks you to
+// declare. three ships the same decoders, so they are bundled and the paths
+// overridden in panel.ts.
+const DECODERS = [
+  ["three/examples/jsm/libs/draco/gltf", "vendor/draco"],
+  ["three/examples/jsm/libs/basis", "vendor/ktx2"],
+];
+
 async function copyStatic() {
+  for (const [from, to] of DECODERS) {
+    await cp(resolve(here, "..", "node_modules", from), resolve(out, to), {
+      recursive: true,
+    });
+  }
   await cp(resolve(here, "manifest.json"), resolve(out, "manifest.json"));
   await cp(resolve(src, "panel.html"), resolve(out, "panel.html"));
   await cp(resolve(src, "panel.css"), resolve(out, "panel.css"));
