@@ -173,11 +173,32 @@ const IS_SERVERLESS = Boolean(
   process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME,
 );
 
-// @sparticuz/chromium's flag list is tuned for puppeteer, which tolerates a
-// browser that renders in-process. Playwright drives the browser over a pipe
-// and expects it to fork renderer processes, so these three make launch fail
-// outright — they have to come out.
-const PLAYWRIGHT_INCOMPATIBLE_ARGS = new Set([
+// How much browser a serverless function can actually sustain depends on its
+// memory limit, which this code can't see. Rather than hardcode a guess, try
+// the configurations in order of usefulness and keep the first that survives
+// opening a page — the crash shows up at newPage(), not at launch, so an
+// attempt is only proven once a page exists.
+//
+// @sparticuz/chromium's flags are tuned for puppeteer, which renders
+// in-process happily. Playwright prefers real renderer processes, but those
+// cost memory, so dropping back to --single-process is the trade when the
+// function is too small.
+interface LaunchStrategy {
+  label: string;
+  webgl: boolean;
+  singleProcess: boolean;
+}
+
+const SERVERLESS_STRATEGIES: LaunchStrategy[] = [
+  { label: "multi-process+webgl", webgl: true, singleProcess: false },
+  { label: "single-process+webgl", webgl: true, singleProcess: true },
+  // Last resort: without WebGL, three.js never builds a scene and 3D models
+  // stay invisible — but video, audio and client-rendered markup still come
+  // through, which beats returning nothing.
+  { label: "single-process+no-webgl", webgl: false, singleProcess: true },
+];
+
+const MULTI_PROCESS_ONLY_ARGS = new Set([
   "--single-process",
   "--no-zygote",
   "--in-process-gpu",
@@ -203,36 +224,80 @@ function resolveChromiumBinDir(): { dir: string | null; tried: string[] } {
   return { dir: null, tried: candidates };
 }
 
-async function launchBrowser(): Promise<Browser> {
-  if (IS_SERVERLESS) {
-    const [{ chromium }, serverlessChromium] = await Promise.all([
-      import("playwright-core"),
-      import("@sparticuz/chromium").then((mod) => mod.default ?? mod),
-    ]);
+interface BrowserSession {
+  browser: Browser;
+  page: Page;
+  // Names the strategy that worked, plus anything that failed getting there.
+  note: string | null;
+}
 
-    // three.js and friends only request their .glb once a WebGL context comes
-    // up, so the software graphics stack has to stay on — with it disabled
-    // every 3D site looks like it has no models at all.
-    serverlessChromium.setGraphicsMode = true;
+const PAGE_OPTIONS = {
+  userAgent: USER_AGENT,
+  viewport: { width: 1440, height: 1000 },
+  locale: "en-US",
+} as const;
 
-    const { dir, tried } = resolveChromiumBinDir();
-    if (!dir) {
-      throw new Error(
-        `@sparticuz/chromium archives missing. cwd=${process.cwd()} tried=${tried.join(", ")}`,
-      );
-    }
+async function openServerlessSession(): Promise<BrowserSession> {
+  const [{ chromium }, serverlessChromium] = await Promise.all([
+    import("playwright-core"),
+    import("@sparticuz/chromium").then((mod) => mod.default ?? mod),
+  ]);
 
-    return chromium.launch({
-      executablePath: await serverlessChromium.executablePath(dir),
-      args: serverlessChromium.args.filter(
-        (arg) => !PLAYWRIGHT_INCOMPATIBLE_ARGS.has(arg),
-      ),
-      headless: true,
-    });
+  const { dir, tried } = resolveChromiumBinDir();
+  if (!dir) {
+    throw new Error(
+      `@sparticuz/chromium archives missing. cwd=${process.cwd()} tried=${tried.join(", ")}`,
+    );
   }
 
+  const failures: string[] = [];
+
+  for (const strategy of SERVERLESS_STRATEGIES) {
+    let browser: Browser | null = null;
+    try {
+      // three.js and friends only request their .glb once a WebGL context
+      // comes up, so the software graphics stack decides whether 3D models
+      // are visible at all. It also costs memory, hence the fallback.
+      serverlessChromium.setGraphicsMode = strategy.webgl;
+
+      const args = strategy.singleProcess
+        ? serverlessChromium.args
+        : serverlessChromium.args.filter(
+            (arg) => !MULTI_PROCESS_ONLY_ARGS.has(arg),
+          );
+
+      browser = await chromium.launch({
+        executablePath: await serverlessChromium.executablePath(dir),
+        args,
+        headless: true,
+      });
+
+      const context = await browser.newContext(PAGE_OPTIONS);
+      const page = await context.newPage();
+
+      return {
+        browser,
+        page,
+        note: failures.length
+          ? `using ${strategy.label} after: ${failures.join("; ")}`
+          : null,
+      };
+    } catch (error) {
+      failures.push(`${strategy.label} → ${(error as Error).message}`);
+      await browser?.close().catch(() => {});
+    }
+  }
+
+  throw new Error(`every launch strategy failed: ${failures.join("; ")}`);
+}
+
+async function openSession(): Promise<BrowserSession> {
+  if (IS_SERVERLESS) return openServerlessSession();
+
   const { chromium } = await import("playwright");
-  return chromium.launch({ args: ["--no-sandbox"] });
+  const browser = await chromium.launch({ args: ["--no-sandbox"] });
+  const context = await browser.newContext(PAGE_OPTIONS);
+  return { browser, page: await context.newPage(), note: null };
 }
 
 // Loads the page in headless Chromium and watches network responses for
@@ -250,13 +315,10 @@ export async function captureNetworkMedia(
   let browser: Browser | null = null;
 
   try {
-    browser = await launchBrowser();
-    const context = await browser.newContext({
-      userAgent: USER_AGENT,
-      viewport: { width: 1440, height: 1000 },
-      locale: "en-US",
-    });
-    const page = await context.newPage();
+    const session = await openSession();
+    browser = session.browser;
+    const page = session.page;
+    if (session.note) onDegraded?.(session.note);
 
     page.on("response", (response) => {
       const url = response.url();
