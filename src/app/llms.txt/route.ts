@@ -1,4 +1,11 @@
-import { EXTRACTED, FAQ, HOW_IT_WORKS, SITE_URL } from "@/lib/pullsrc/seo";
+import {
+  EXTENSION_POINTS,
+  EXTENSION_STATUS,
+  EXTRACTED,
+  FAQ,
+  HOW_IT_WORKS,
+  SITE_URL,
+} from "@/lib/pullsrc/seo";
 
 // A markdown summary for answer engines, generated from seo.ts so it can't
 // drift from the page. Nothing reads the request, so it bakes at build time.
@@ -11,7 +18,7 @@ export function GET() {
     "> A free, browser-based tool that extracts every asset from a webpage. Paste a page URL and PullSRC returns the images, logos, fonts, colors, video, audio, and 3D models that page loads, plus a credit sheet recording where each one came from.",
     "",
     `Site: ${SITE_URL}`,
-    "Price: Free. No account, no install, no extension.",
+    "Price: Free. No account and nothing to install to use the website.",
     "Built by: Avi (https://byavi.in)",
     "",
     "## How it works",
@@ -21,6 +28,12 @@ export function GET() {
     "## What it extracts",
     "",
     ...EXTRACTED.map((item) => `- **${item.title}**: ${item.body}`),
+    "",
+    "## Browser extension",
+    "",
+    `Status: ${EXTENSION_STATUS.toLowerCase()}. The PullSRC Chrome extension has been submitted to the Chrome Web Store and is awaiting review; it is not installable yet.`,
+    "",
+    ...EXTENSION_POINTS.map((point) => `- **${point.title}**: ${point.body}`),
     "",
     "## Limits",
     "",

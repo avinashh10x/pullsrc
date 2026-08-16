@@ -49,6 +49,28 @@ export const EXTRACTED = [
   },
 ] as const;
 
+// The Chrome extension is submitted and waiting on Web Store review. Once it is
+// published, set EXTENSION_URL to the public listing — the landing section and
+// the FAQ both read from here, and the CTA turns into a real link on its own.
+export const EXTENSION_URL: string | null = null;
+
+export const EXTENSION_STATUS = "In review — coming soon";
+
+export const EXTENSION_POINTS = [
+  {
+    title: "Works behind a login",
+    body: "The extension scans the page already open in your tab, so anything you can see — dashboards, paywalled articles, private files — it can see too.",
+  },
+  {
+    title: "Nothing leaves your browser",
+    body: "There is no server in the loop. The extension reads the page locally and downloads come straight from the site hosting them.",
+  },
+  {
+    title: "Same categories, in a side panel",
+    body: "Images, logos, fonts, colors, video, audio, and 3D models, sorted as they're found, right beside the page you're on.",
+  },
+] as const;
+
 export const FAQ = [
   {
     q: "What is PullSRC?",
@@ -56,7 +78,11 @@ export const FAQ = [
   },
   {
     q: "Do I need to install anything?",
-    a: "No. PullSRC runs entirely in your browser. There is no extension, no desktop app, and no account to create.",
+    a: "No. PullSRC runs entirely in your browser — no desktop app and no account to create. A Chrome extension is on the way for pages the website can't reach, but the site itself needs nothing installed.",
+  },
+  {
+    q: "Is there a browser extension?",
+    a: "One is coming. The PullSRC Chrome extension has been submitted to the Chrome Web Store and is currently in review. It scans the tab you already have open, so it reaches pages behind a login that the website version cannot, and it sends nothing to any server.",
   },
   {
     q: "How is this different from using browser DevTools?",

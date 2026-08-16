@@ -1,3 +1,4 @@
+import { LandingExtension } from "@/components/pullsrc/landing-extension"
 import { EXTRACTED, FAQ, HOW_IT_WORKS } from "@/lib/pullsrc/seo"
 
 // The only indexable prose on the site, and the same copy seo.ts describes.
@@ -64,6 +65,8 @@ export function LandingContent() {
           ))}
         </dl>
       </section>
+
+      <LandingExtension />
 
       <section
         aria-labelledby="faq"

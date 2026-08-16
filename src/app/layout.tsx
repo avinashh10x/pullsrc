@@ -60,6 +60,8 @@ export const metadata: Metadata = {
     "download webpage media",
     "source and credit media from website",
     "paste url get assets",
+    "chrome extension to download website assets",
+    "extract assets from page behind login",
   ],
   alternates: {
     canonical: "/",

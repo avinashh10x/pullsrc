@@ -1,5 +1,6 @@
 import { LandingHero } from "@/components/pullsrc/landing-hero"
 import { LandingContent } from "@/components/pullsrc/landing-content"
+import { ExtensionPopup } from "@/components/pullsrc/extension-popup"
 import { buildJsonLd } from "@/lib/pullsrc/seo"
 
 export default function Home() {
@@ -12,6 +13,7 @@ export default function Home() {
       />
       <LandingHero />
       <LandingContent />
+      <ExtensionPopup />
     </main>
   )
 }
