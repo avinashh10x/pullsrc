@@ -11,6 +11,7 @@ declare module "react" {
         loading?: "auto" | "lazy" | "eager"
         reveal?: "auto" | "interaction" | "manual"
         "auto-rotate"?: boolean
+        autoplay?: boolean
         "auto-rotate-delay"?: number
         "camera-controls"?: boolean
         "disable-zoom"?: boolean

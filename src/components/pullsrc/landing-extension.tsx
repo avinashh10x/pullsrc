@@ -1,4 +1,4 @@
-import { Clock, Puzzle } from "lucide-react"
+import { CircleCheck, Puzzle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -7,8 +7,6 @@ import {
   EXTENSION_URL,
 } from "@/lib/pullsrc/seo"
 
-// The CTA stays a disabled button until EXTENSION_URL is filled in — flipping
-// that one constant in seo.ts is the whole "we're live" change.
 export function LandingExtension() {
   return (
     <section
@@ -19,7 +17,7 @@ export function LandingExtension() {
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-              <Clock className="size-3" aria-hidden />
+              <CircleCheck className="size-3" aria-hidden />
               {EXTENSION_STATUS}
             </span>
             <h2
@@ -32,8 +30,8 @@ export function LandingExtension() {
               The website can only reach pages a logged-out visitor can. The
               PullSRC Chrome extension scans the tab you already have open, so
               it pulls assets from anything you can see — including pages behind
-              a login. It has been submitted to the Chrome Web Store and is
-              waiting on review.
+              a login. It&apos;s free, it&apos;s on the Chrome Web Store now,
+              and it gives the best results of the two.
             </p>
           </div>
 
@@ -47,7 +45,7 @@ export function LandingExtension() {
                 }
               >
                 <Puzzle />
-                Add to Chrome
+                Add to Chrome — free
               </Button>
             ) : (
               <Button
@@ -57,7 +55,7 @@ export function LandingExtension() {
                 disabled
               >
                 <Puzzle />
-                Coming to the Chrome Web Store
+                Chrome Web Store listing unavailable
               </Button>
             )}
           </div>

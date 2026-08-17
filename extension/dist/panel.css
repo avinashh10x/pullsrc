@@ -19,9 +19,15 @@
   box-sizing: border-box;
 }
 
+/* Sections are toggled with `hidden`, and their own `display` rules outrank the
+   UA stylesheet's `[hidden] { display: none }`. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
-  /* Clears the sticky header and the fixed footer. */
+  /* Clears the fixed footer; panel.ts overwrites this with its measured height. */
   padding: 0 0 3.5rem;
   transition: padding-bottom 0.12s ease;
   min-width: 300px;
@@ -305,6 +311,7 @@ body {
 
 .preview img,
 .preview video,
+.preview canvas,
 .preview model-viewer {
   width: 100%;
   height: 100%;
@@ -320,6 +327,16 @@ body {
 .preview svg {
   width: 26px;
   height: 26px;
+}
+
+.preview-note {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  text-align: center;
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
 }
 
 .preview .type {
@@ -403,7 +420,7 @@ body {
   appearance: none;
   -webkit-appearance: none;
   border: 1.5px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   background-color: rgb(255 255 255 / 0.85);
   backdrop-filter: blur(4px);
   transition:
@@ -475,7 +492,28 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The grid must clear whichever height the docked bar currently has. */
-body.has-selection {
-  padding-bottom: 6.2rem;
+/* ---------- footer links ---------- */
+.foot-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+
+.foot-links a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.foot-links a:hover {
+  color: var(--foreground);
+  border-bottom-color: var(--border);
+}
+
+.foot-links .sep {
+  opacity: 0.5;
 }

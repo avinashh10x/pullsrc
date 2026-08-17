@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Image from "next/image"
-import { Clock, Puzzle, X } from "lucide-react"
+import { CircleCheck, Puzzle, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -11,9 +11,8 @@ import {
   EXTENSION_URL,
 } from "@/lib/pullsrc/seo"
 
-// Bumping this key re-shows the modal to everyone who already dismissed it —
-// do that when the extension actually goes live, not for copy tweaks.
-const STORAGE_KEY = "pullsrc:extension-popup:v1"
+// Bump to re-show the modal to everyone who already dismissed it. v2 = launch.
+const STORAGE_KEY = "pullsrc:extension-popup:v2"
 const DELAY_MS = 1200
 
 export function ExtensionPopup() {
@@ -96,7 +95,7 @@ export function ExtensionPopup() {
 
         <div className="overflow-y-auto p-6">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-            <Clock className="size-3" aria-hidden />
+            <CircleCheck className="size-3" aria-hidden />
             {EXTENSION_STATUS}
           </span>
 
@@ -104,12 +103,12 @@ export function ExtensionPopup() {
             id="extension-popup-title"
             className="mt-3 font-heading text-2xl uppercase tracking-normal text-foreground sm:text-3xl"
           >
-            PullSRC is coming to Chrome
+            PullSRC is now on Chrome
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             A side panel that scans the tab you already have open — so it pulls
             assets from anything you can see, including pages behind a login.
-            It&apos;s with the Chrome Web Store for review right now.
+            Free, and the best way to use PullSRC.
           </p>
 
           <ul className="mt-4 space-y-1.5">
@@ -138,7 +137,7 @@ export function ExtensionPopup() {
                 onClick={dismiss}
               >
                 <Puzzle />
-                Add to Chrome
+                Add to Chrome — free
               </Button>
             ) : (
               <Button
@@ -148,7 +147,7 @@ export function ExtensionPopup() {
                 disabled
               >
                 <Puzzle />
-                Coming soon
+                Listing unavailable
               </Button>
             )}
             <Button

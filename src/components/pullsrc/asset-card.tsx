@@ -14,7 +14,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { CategoryIcon } from "@/components/pullsrc/category-icon"
-import { assetDownloads, variantHref } from "@/lib/pullsrc/download"
+import { assetDownloads, downloadHref, variantHref } from "@/lib/pullsrc/download"
+import { canRetryProxied, modelExtension, modelRenderer } from "@/lib/pullsrc/model3d"
 import type { Asset, MediaVariant } from "@/lib/pullsrc/types"
 
 // Aspect ratio instead of a fixed height — scales with whatever width the
@@ -294,7 +295,14 @@ function AssetPreview({ asset }: { asset: Asset }) {
   }
 
   if (asset.category === "model3d") {
-    return <Model3DPreview url={asset.url} name={asset.name} />
+    return (
+      <Model3DPreview
+        url={asset.url}
+        name={asset.name}
+        fileType={asset.fileType}
+        referer={asset.credit.originalUrl}
+      />
+    )
   }
 
   if (asset.category === "fonts") {
@@ -432,10 +440,65 @@ function VideoPreview({ url }: { url: string }) {
   )
 }
 
-function Model3DPreview({ url, name }: { url: string; name: string }) {
+function Model3DFallback({ label }: { label?: string }) {
+  return (
+    <div
+      className={`flex ${PREVIEW_ASPECT} ${PREVIEW_SHAPE} w-full flex-col items-center justify-center gap-1.5 bg-muted`}
+    >
+      <CategoryIcon category="model3d" className="size-7 text-muted-foreground" />
+      {label && <span className="text-[0.65rem] text-muted-foreground">{label}</span>}
+    </div>
+  )
+}
+
+function Model3DPreview({
+  url,
+  name,
+  fileType,
+  referer,
+}: {
+  url: string
+  name: string
+  fileType: string
+  referer: string
+}) {
+  const renderer = modelRenderer(url, fileType)
+
+  if (renderer === "gltf") return <GltfPreview url={url} name={name} fileType={fileType} referer={referer} />
+  if (renderer === "three") return <ThreePreview url={url} fileType={fileType} referer={referer} />
+  return <Model3DFallback label="No preview for this format" />
+}
+
+// Direct first, since a .gltf resolves its .bin and textures relative to where
+// it was fetched from. The proxy is the retry for CORS and referer-locked CDNs.
+function useProxyRetry(url: string, name: string, fileType: string, referer: string) {
+  const [proxied, setProxied] = useState(false)
+  const canRetry = canRetryProxied(url, fileType)
+
+  const src = proxied ? downloadHref({ url, name }, referer) : url
+  const retry = () => {
+    if (!canRetry || proxied) return false
+    setProxied(true)
+    return true
+  }
+  return { src, retry, proxied }
+}
+
+function GltfPreview({
+  url,
+  name,
+  fileType,
+  referer,
+}: {
+  url: string
+  name: string
+  fileType: string
+  referer: string
+}) {
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
+  const { src, retry } = useProxyRetry(url, name, fileType, referer)
 
   useEffect(() => {
     let cancelled = false
@@ -454,30 +517,89 @@ function Model3DPreview({ url, name }: { url: string; name: string }) {
   useEffect(() => {
     const el = ref.current
     if (!el || !ready) return
-    const onError = () => setFailed(true)
+    const onError = () => {
+      if (!retry()) setFailed(true)
+    }
     el.addEventListener("error", onError)
     return () => el.removeEventListener("error", onError)
-  }, [ready])
+  }, [ready, src]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (failed || !ready) {
-    return (
-      <div className={`flex ${PREVIEW_ASPECT} ${PREVIEW_SHAPE} w-full items-center justify-center bg-muted`}>
-        <CategoryIcon category="model3d" className="size-7 text-muted-foreground" />
-      </div>
-    )
-  }
+  if (failed) return <Model3DFallback label="Couldn't load model" />
+  if (!ready) return <Model3DFallback />
 
   return (
     <model-viewer
       ref={ref}
-      src={url}
+      key={src}
+      src={src}
       alt={name}
       auto-rotate
+      autoplay
       camera-controls
       disable-zoom
       touch-action="pan-y"
       shadow-intensity="1"
       className={`${PREVIEW_ASPECT} ${PREVIEW_SHAPE} w-full bg-muted`}
     />
+  )
+}
+
+// Everything <model-viewer> has no parser for.
+function ThreePreview({
+  url,
+  fileType,
+  referer,
+}: {
+  url: string
+  fileType: string
+  referer: string
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [state, setState] = useState<"loading" | "shown" | "failed">("loading")
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    let cancelled = false
+    let handle: { dispose(): void } | null = null
+
+    const urls = [url]
+    if (canRetryProxied(url, fileType)) {
+      urls.push(downloadHref({ url, name: url.split("/").pop() ?? "model" }, referer))
+    }
+
+    import("@/lib/pullsrc/model3d-viewer")
+      .then(({ mountModel3D }) =>
+        mountModel3D(canvas, { urls, ext: modelExtension(url, fileType) })
+      )
+      .then((mounted) => {
+        if (cancelled) mounted.dispose()
+        else {
+          handle = mounted
+          setState("shown")
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setState("failed")
+      })
+
+    return () => {
+      cancelled = true
+      handle?.dispose()
+    }
+  }, [url, fileType, referer])
+
+  if (state === "failed") return <Model3DFallback label="Couldn't load model" />
+
+  return (
+    <div className={`relative ${PREVIEW_ASPECT} ${PREVIEW_SHAPE} w-full overflow-hidden bg-muted`}>
+      <canvas ref={canvasRef} className="size-full" />
+      {state === "loading" && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <CategoryIcon category="model3d" className="size-7 animate-pulse text-muted-foreground" />
+        </div>
+      )}
+    </div>
   )
 }

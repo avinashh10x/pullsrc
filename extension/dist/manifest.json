@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PullSRC \u2014 Every asset, one paste",
   "short_name": "PullSRC",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pull images, logos, fonts, colours, video, audio and 3D models out of any page you can open \u2014 including pages that need a login.",
   "minimum_chrome_version": "116",
   "action": {

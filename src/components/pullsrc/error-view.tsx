@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { ExtensionCta } from "@/components/pullsrc/extension-cta"
 
 export function ErrorView({
   icon: Icon,
@@ -12,6 +13,7 @@ export function ErrorView({
   url,
   actionLabel,
   onAction,
+  suggestExtension = false,
 }: {
   icon: LucideIcon
   title: string
@@ -19,6 +21,7 @@ export function ErrorView({
   url: string
   actionLabel: string
   onAction: () => void
+  suggestExtension?: boolean
 }) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center px-4 text-center">
@@ -39,6 +42,11 @@ export function ErrorView({
           {actionLabel}
         </Button>
       </Card>
+      {suggestExtension && (
+        <div className="mt-4 w-full text-left">
+          <ExtensionCta variant="results" />
+        </div>
+      )}
     </div>
   )
 }

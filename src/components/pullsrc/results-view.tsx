@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AssetCard } from "@/components/pullsrc/asset-card"
 import { BulkActionBar } from "@/components/pullsrc/bulk-action-bar"
 import { CategoryIcon } from "@/components/pullsrc/category-icon"
+import { ExtensionCta } from "@/components/pullsrc/extension-cta"
 import { cn } from "@/lib/utils"
 import { buildExportZip, triggerBlobDownload } from "@/lib/pullsrc/zip"
 import {
@@ -76,6 +77,9 @@ export function ResultsView({
           <RotateCcw />
           Try another url
         </Button>
+        <div className="mt-6 w-full text-left">
+          <ExtensionCta variant="results" />
+        </div>
       </div>
     )
   }
@@ -161,6 +165,8 @@ export function ResultsView({
           </Button>
         </div>
       </div>
+
+      <ExtensionCta variant="results" />
 
       {/* Stacked (mobile) this is a flex column, so `items-start` sized panels
           to their content — the colors grid, whose labels are just a hex code,

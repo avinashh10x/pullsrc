@@ -1,3 +1,4 @@
+import { ExtensionCta } from "@/components/pullsrc/extension-cta"
 import { LandingInput } from "@/components/pullsrc/landing-input"
 
 // Server-rendered so the h1 and copy are in the initial HTML for crawlers.
@@ -25,6 +26,7 @@ export function LandingHero() {
         </div>
 
         <LandingInput />
+        <ExtensionCta variant="hero" />
       </div>
     </section>
   )

@@ -3,6 +3,9 @@
 
 export const SITE_URL = "https://pullsrc.byavi.in";
 
+// India-facing alternative: buymeachai.in/avinash
+export const SUPPORT_URL = "https://buymeacoffee.com/avinash10x";
+
 export const HOW_IT_WORKS = [
   {
     title: "Paste a page URL",
@@ -45,16 +48,15 @@ export const EXTRACTED = [
   },
   {
     title: "3D models",
-    body: "glTF and GLB models embedded in the page, previewable before you download.",
+    body: "GLB, glTF, USDZ, OBJ, FBX, STL, PLY, Collada, 3MF and more — each one turning in the card before you download it.",
   },
 ] as const;
 
-// The Chrome extension is submitted and waiting on Web Store review. Once it is
-// published, set EXTENSION_URL to the public listing — the landing section and
-// the FAQ both read from here, and the CTA turns into a real link on its own.
-export const EXTENSION_URL: string | null = null;
+// Every link to the extension reads this; null falls back to a disabled button.
+export const EXTENSION_URL: string | null =
+  "https://chromewebstore.google.com/detail/ncgigpaghalfdnnlfjhlpmplohkicfpc";
 
-export const EXTENSION_STATUS = "In review — coming soon";
+export const EXTENSION_STATUS = "Live on the Chrome Web Store";
 
 export const EXTENSION_POINTS = [
   {
@@ -78,11 +80,11 @@ export const FAQ = [
   },
   {
     q: "Do I need to install anything?",
-    a: "No. PullSRC runs entirely in your browser — no desktop app and no account to create. A Chrome extension is on the way for pages the website can't reach, but the site itself needs nothing installed.",
+    a: "No. PullSRC runs entirely in your browser — no desktop app and no account to create. There is a free Chrome extension for pages the website can't reach, but the site itself needs nothing installed.",
   },
   {
     q: "Is there a browser extension?",
-    a: "One is coming. The PullSRC Chrome extension has been submitted to the Chrome Web Store and is currently in review. It scans the tab you already have open, so it reaches pages behind a login that the website version cannot, and it sends nothing to any server.",
+    a: "Yes. The PullSRC Chrome extension is live on the Chrome Web Store and free to install. It scans the tab you already have open, so it reaches pages behind a login that the website version cannot, and it sends nothing to any server.",
   },
   {
     q: "How is this different from using browser DevTools?",
@@ -98,7 +100,7 @@ export const FAQ = [
   },
   {
     q: "Does it work on pages behind a login?",
-    a: "No. PullSRC only sees what a page shows to an anonymous visitor, so anything gated behind authentication, a paywall, or a bot check won't be reachable.",
+    a: "The website doesn't — it only sees what a page shows to an anonymous visitor, so anything gated behind authentication, a paywall, or a bot check won't be reachable. The Chrome extension does, because it reads the tab you already have open, signed in as you.",
   },
   {
     q: "What is the credit sheet?",

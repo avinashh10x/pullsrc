@@ -175,6 +175,7 @@ export function ScanPage() {
           url={url}
           actionLabel="Try another url"
           onAction={goHome}
+          suggestExtension
         />
       )}
 

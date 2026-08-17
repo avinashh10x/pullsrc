@@ -1,6 +1,8 @@
 import JSZip from "jszip";
 
 import { buildCreditSheet } from "@/lib/pullsrc/credit";
+import { modelExtension, modelRenderer } from "@/lib/pullsrc/model3d";
+import { SITE_URL, SUPPORT_URL } from "@/lib/pullsrc/seo";
 import { CATEGORY_LABEL, CATEGORY_ORDER } from "@/lib/pullsrc/types";
 import type { Asset, AssetCategory, ScanResult } from "@/lib/pullsrc/types";
 
@@ -26,6 +28,20 @@ const bulkEl = byId<HTMLDivElement>("bulk");
 const bulkCountEl = byId<HTMLSpanElement>("bulk-count");
 const bulkClearBtn = byId<HTMLButtonElement>("bulk-clear");
 const bulkSaveBtn = byId<HTMLButtonElement>("bulk-save");
+const siteLink = byId<HTMLAnchorElement>("site-link");
+const supportLink = byId<HTMLAnchorElement>("support-link");
+
+siteLink.href = SITE_URL;
+supportLink.href = SUPPORT_URL;
+
+// The footer is fixed, so the grid clears it by exactly its height — measured,
+// because the selection row and wrapped button labels both change it.
+function syncFootPadding(): void {
+  const height = footEl.getBoundingClientRect().height;
+  document.body.style.paddingBottom = `${height + 8}px`;
+}
+
+new ResizeObserver(syncFootPadding).observe(footEl);
 
 let result: ScanResult | null = null;
 let active: AssetCategory | "all" = "all";
@@ -60,6 +76,7 @@ function show(view: "scanning" | "results" | "empty"): void {
     listEl.replaceChildren();
     bulkEl.hidden = true;
   }
+  syncFootPadding();
 }
 
 function renderScanning(url: string): void {
@@ -255,8 +272,8 @@ function render(): void {
 
 function renderBulk(): void {
   bulkEl.hidden = selected.size === 0;
-  document.body.classList.toggle("has-selection", selected.size > 0);
   bulkCountEl.textContent = `${selected.size} selected`;
+  syncFootPadding();
 }
 
 function preview(asset: Asset): HTMLElement {
@@ -320,21 +337,52 @@ function preview(asset: Asset): HTMLElement {
   if (asset.category === "model3d") {
     // Icon first: a 5 MB GLB must never block the grid from rendering.
     box.innerHTML = icon("model3d") + typeTag(asset.fileType);
-    void ensureModelViewer().then((mod) => {
-      if (!mod) return;
-      const viewer = document.createElement("model-viewer");
-      viewer.setAttribute("src", asset.url);
-      viewer.setAttribute("camera-controls", "");
-      viewer.setAttribute("auto-rotate", "");
-      viewer.setAttribute("disable-zoom", "");
-      viewer.setAttribute("touch-action", "pan-y");
-      viewer.setAttribute("shadow-intensity", "1");
-      viewer.addEventListener("error", () => {
-        box.innerHTML = icon("model3d") + typeTag(asset.fileType);
+    const restore = (note?: string) => {
+      box.innerHTML =
+        icon("model3d") +
+        (note ? `<span class="preview-note">${escapeHtml(note)}</span>` : "") +
+        typeTag(asset.fileType);
+    };
+
+    const kind = modelRenderer(asset.url, asset.fileType);
+
+    if (kind === "gltf") {
+      void ensureModelViewer().then((mod) => {
+        if (!mod) return;
+        const viewer = document.createElement("model-viewer");
+        viewer.setAttribute("src", asset.url);
+        viewer.setAttribute("camera-controls", "");
+        viewer.setAttribute("auto-rotate", "");
+        viewer.setAttribute("autoplay", "");
+        viewer.setAttribute("disable-zoom", "");
+        viewer.setAttribute("touch-action", "pan-y");
+        viewer.setAttribute("shadow-intensity", "1");
+        viewer.addEventListener("error", () => restore("Couldn't load model"));
+        box.replaceChildren(viewer);
+        box.insertAdjacentHTML("beforeend", typeTag(asset.fileType));
       });
-      box.replaceChildren(viewer);
-      box.insertAdjacentHTML("beforeend", typeTag(asset.fileType));
-    });
+      return box;
+    }
+
+    if (kind === "three") {
+      // No proxy fallback: host permissions let the panel fetch it directly.
+      const canvas = document.createElement("canvas");
+      void import("@/lib/pullsrc/model3d-viewer")
+        .then(({ mountModel3D }) =>
+          mountModel3D(canvas, {
+            urls: [asset.url],
+            ext: modelExtension(asset.url, asset.fileType),
+          }),
+        )
+        .then(() => {
+          box.replaceChildren(canvas);
+          box.insertAdjacentHTML("beforeend", typeTag(asset.fileType));
+        })
+        .catch(() => restore("Couldn't load model"));
+      return box;
+    }
+
+    restore("No preview for this format");
     return box;
   }
 

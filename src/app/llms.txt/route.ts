@@ -1,6 +1,7 @@
 import {
   EXTENSION_POINTS,
   EXTENSION_STATUS,
+  EXTENSION_URL,
   EXTRACTED,
   FAQ,
   HOW_IT_WORKS,
@@ -31,13 +32,15 @@ export function GET() {
     "",
     "## Browser extension",
     "",
-    `Status: ${EXTENSION_STATUS.toLowerCase()}. The PullSRC Chrome extension has been submitted to the Chrome Web Store and is awaiting review; it is not installable yet.`,
+    `Status: ${EXTENSION_STATUS.toLowerCase()}. The PullSRC Chrome extension is published and free to install${
+      EXTENSION_URL ? `: ${EXTENSION_URL}` : ""
+    }. It is the recommended way to use PullSRC, because it reads the tab you already have open.`,
     "",
     ...EXTENSION_POINTS.map((point) => `- **${point.title}**: ${point.body}`),
     "",
     "## Limits",
     "",
-    "- Only public pages. Anything behind a login, paywall, or bot check is unreachable.",
+    "- The website reaches only public pages. Anything behind a login, paywall, or bot check needs the Chrome extension instead.",
     "- DRM-protected video (Widevine, FairPlay) cannot be extracted and is labelled as such.",
     "- Needs a specific page URL, not just a domain — assets live on pages.",
     "",
