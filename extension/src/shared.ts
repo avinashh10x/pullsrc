@@ -1,3 +1,4 @@
+import type { FontSource } from "@/lib/pullsrc/font-assets";
 import type { MediaKind } from "@/lib/pullsrc/media-classify";
 
 // Wire format between worker, content script and panel. One file, because a
@@ -24,7 +25,9 @@ export interface PageSnapshot {
   pageTitle: string;
   resources: PageResource[];
   colors: string[];
-  fonts: Array<{ family: string; url: string; weights: string[] }>;
+  // One entry per @font-face src url, so a family that ships .woff2 and .ttf
+  // arrives as two — the panel needs both to offer a format menu.
+  fonts: FontSource[];
 }
 
 export type PanelRequest =

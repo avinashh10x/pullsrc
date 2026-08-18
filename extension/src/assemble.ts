@@ -1,19 +1,15 @@
+import { buildFontAssets } from "@/lib/pullsrc/font-assets";
 import { formatBytes, headSafely, mapWithConcurrency } from "@/lib/pullsrc/server/http";
 import {
   reconcileTracks,
   type TrackCandidate,
 } from "@/lib/pullsrc/media-reconcile";
-import {
-  classifyMediaUrl,
-  FONT_EXT,
-  IMAGE_EXT,
-} from "@/lib/pullsrc/media-classify";
+import { classifyMediaUrl, IMAGE_EXT } from "@/lib/pullsrc/media-classify";
 import type {
   Asset,
   AudioAsset,
   ColorAsset,
   CreditInfo,
-  FontAsset,
   ImageAsset,
   LogoAsset,
   Model3DAsset,
@@ -151,26 +147,9 @@ export async function assembleAssets(
   });
 
   // --- fonts --------------------------------------------------------------
-  const fonts = snapshot.fonts
-    .filter((font) => FONT_EXT.test(safePath(font.url)))
-    .slice(0, MAX_FONTS);
-  const fontSizes = await mapWithConcurrency(fonts, 6, (font) =>
-    headSafely(font.url),
-  );
-  fonts.forEach((font, index) => {
-    assets.push({
-      id: `font-${index}`,
-      category: "fonts",
-      name: nameFromUrl(font.url),
-      url: font.url,
-      fontFamily: font.family,
-      weights: font.weights,
-      fileType: fileTypeFromUrl(font.url, "FONT"),
-      size: formatBytes(fontSizes[index]?.contentLength ?? null),
-      sizeBytes: fontSizes[index]?.contentLength ?? null,
-      credit,
-    } satisfies FontAsset);
-  });
+  // Shared with the web app so a font scanned either way offers the same
+  // downloads: an installable TTF/OTF headline plus every format found.
+  assets.push(...(await buildFontAssets(snapshot.fonts, credit, MAX_FONTS)));
 
   // --- colours ------------------------------------------------------------
   snapshot.colors.forEach((hex, index) => {

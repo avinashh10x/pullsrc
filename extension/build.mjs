@@ -33,6 +33,11 @@ const options = {
   alias: { "@": resolve(here, "..", "src") },
   // Pulled in transitively by the server helpers, never reached at run time.
   external: ["playwright-core", "node:fs", "node:path"],
+  // Only the WOFF2 converter is server-side, and pointing it at a local run
+  // is the difference between testing that path and not.
+  define: {
+    __PULLSRC_API__: JSON.stringify(process.env.PULLSRC_API ?? ""),
+  },
 };
 
 // model-viewer defaults its Draco and KTX2 decoders to www.gstatic.com. That is

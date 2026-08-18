@@ -1,5 +1,11 @@
 import * as cheerio from "cheerio";
 
+import {
+  fontFormatFromCssHint,
+  fontFormatFromUrl,
+  type FontFormat,
+} from "@/lib/pullsrc/font-convert";
+
 import { resolveUrl } from "./http";
 
 export interface RawImage {
@@ -12,6 +18,9 @@ export interface RawFont {
   fontFamily: string;
   weight: string;
   url: string;
+  // woff2/woff/ttf/otf — null when neither the URL nor the CSS format() hint
+  // says. Drives which file the card offers and whether it needs unwrapping.
+  format: FontFormat | null;
   // False for subset files that can't render A-Z — see rangeCoversBasicLatin.
   coversLatin: boolean;
 }
@@ -233,18 +242,27 @@ export function parseFontFaces(cssText: string, cssBaseUrl: string): RawFont[] {
       ? rangeCoversBasicLatin(rangeMatch[1])
       : true;
 
-    const urlMatches = [
-      ...block.matchAll(/url\(\s*(?:"([^"]+)"|'([^']+)'|([^)]+))\s*\)/gi),
+    // Every url() in the src list, not just the one the browser would pick:
+    // a foundry that also ships .ttf next to .woff2 saves us a conversion, and
+    // the card offers the rest as alternatives.
+    const sources = [
+      ...block.matchAll(
+        /url\(\s*(?:"([^"]+)"|'([^']+)'|([^)]+))\s*\)(?:\s*format\(\s*(?:"([^"]+)"|'([^']+)'|([^)]+))\s*\))?/gi,
+      ),
     ];
-    if (urlMatches.length === 0) continue;
 
-    const preferred =
-      urlMatches.find((m) => /\.woff2/i.test(m[0])) ?? urlMatches[0];
-    const rawUrl = (preferred[1] ?? preferred[2] ?? preferred[3] ?? "").trim();
-    const absolute = resolveUrl(rawUrl, cssBaseUrl);
-    if (!absolute) continue;
+    for (const source of sources) {
+      const rawUrl = (source[1] ?? source[2] ?? source[3] ?? "").trim();
+      const absolute = resolveUrl(rawUrl, cssBaseUrl);
+      if (!absolute) continue;
 
-    fonts.push({ fontFamily, weight, url: absolute, coversLatin });
+      const hint = (source[4] ?? source[5] ?? source[6] ?? "").trim();
+      const format =
+        fontFormatFromUrl(absolute) ??
+        (hint ? fontFormatFromCssHint(hint) : null);
+
+      fonts.push({ fontFamily, weight, url: absolute, format, coversLatin });
+    }
   }
 
   return fonts;

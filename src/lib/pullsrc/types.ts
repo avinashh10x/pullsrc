@@ -1,3 +1,5 @@
+import type { FontFormat } from "./font-convert"
+
 export type AssetCategory =
   | "images"
   | "fonts"
@@ -38,6 +40,10 @@ export interface MediaVariant {
   drmProtected?: boolean
   recommended?: boolean
   sizeBytes?: number | null
+  // Fonts only: this rendition doesn't exist upstream. `url` points at the web
+  // wrapper the page ships and the download unwraps it into an installable
+  // file first, so `size` describes the source, not what lands on disk.
+  convertFont?: boolean
 }
 
 export interface ImageAsset extends BaseAsset {
@@ -50,6 +56,12 @@ export interface FontAsset extends BaseAsset {
   url: string
   fontFamily: string
   weights: string[]
+  // Set when the page ships web wrappers only: the headline download unwraps
+  // `url` out of this format into the installable file `fileType` names.
+  convertFrom?: FontFormat
+  // Every format the family was found in, installable one first, so the card
+  // can offer the original alongside the wrappers the browser preferred.
+  variants?: MediaVariant[]
 }
 
 export interface LogoAsset extends BaseAsset {

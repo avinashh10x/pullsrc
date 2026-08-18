@@ -1,8 +1,8 @@
 import type { Asset, MediaVariant } from "./types"
 
-// /api/download streams an existing file; /api/stream assembles an HLS
-// playlist into one. Card buttons and the ZIP export must agree, so the choice
-// lives here.
+// /api/download streams an existing file, /api/stream assembles an HLS
+// playlist into one, /api/font unwraps a web font into an installable one.
+// Card buttons and the ZIP export must agree, so the choice lives here.
 
 interface Downloadable {
   url: string
@@ -10,11 +10,15 @@ interface Downloadable {
   wasStreaming?: boolean
   drmProtected?: boolean
   sizeBytes?: number | null
+  convertFont?: boolean
 }
 
 export function downloadHref(item: Downloadable, referer: string): string {
   const params = new URLSearchParams({ url: item.url, name: item.name, referer })
   if (item.wasStreaming) return `/api/stream?${params}`
+  // The converter rewrites the file wholesale, so the byte count the scan
+  // recorded describes neither what it fetches nor what it returns.
+  if (item.convertFont) return `/api/font?${params}`
   // Lets the proxy spot an expired link that now returns only a header.
   if (item.sizeBytes) params.set("bytes", String(item.sizeBytes))
   return `/api/download?${params}`
@@ -47,9 +51,14 @@ export function assetDownloads(
     if (!isDownloadable(asset)) return []
   }
 
+  const item: Downloadable =
+    asset.category === "fonts"
+      ? { ...asset, convertFont: Boolean(asset.convertFrom) }
+      : (asset as Downloadable)
+
   const primary = {
-    href: downloadHref(asset as Downloadable, referer),
-    filename: downloadFilename(asset as Downloadable),
+    href: downloadHref(item, referer),
+    filename: downloadFilename(item),
     label: "file",
   }
 

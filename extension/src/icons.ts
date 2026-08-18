@@ -1,7 +1,7 @@
 import type { AssetCategory } from "@/lib/pullsrc/types";
 
 // Lucide paths, inlined so the panel matches the site without the package.
-const PATHS: Record<AssetCategory | "download" | "copy", string> = {
+const PATHS: Record<AssetCategory | "download" | "copy" | "chevron", string> = {
   images:
     '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
   logo: '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
@@ -15,6 +15,7 @@ const PATHS: Record<AssetCategory | "download" | "copy", string> = {
     '<path d="M12 2 2 7v10l10 5 10-5V7l-10-5Z"/><path d="m2 7 10 5 10-5"/><path d="M12 22V12"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
   copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
 };
 
 export function icon(name: keyof typeof PATHS): string {

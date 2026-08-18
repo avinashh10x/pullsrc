@@ -4,11 +4,21 @@ import { buildCreditSheet } from "@/lib/pullsrc/credit";
 import { modelExtension, modelRenderer } from "@/lib/pullsrc/model3d";
 import { SITE_URL, SUPPORT_URL } from "@/lib/pullsrc/seo";
 import { CATEGORY_LABEL, CATEGORY_ORDER } from "@/lib/pullsrc/types";
-import type { Asset, AssetCategory, ScanResult } from "@/lib/pullsrc/types";
+import type {
+  Asset,
+  AssetCategory,
+  MediaVariant,
+  ScanResult,
+} from "@/lib/pullsrc/types";
 
 import { assembleAssets } from "./assemble";
 import { collectSnapshot } from "./collect";
-import { assembleStream, downloadAsset } from "./download";
+import {
+  assetBlob,
+  assembleStream,
+  downloadAsset,
+  downloadVariant,
+} from "./download";
 import { icon } from "./icons";
 import type { CaptureState, PageSnapshot } from "./shared";
 
@@ -153,8 +163,11 @@ function mergeFrames(frames: PageSnapshot[], fallbackUrl: string): PageSnapshot 
       merged.resources.push(resource);
     }
     for (const font of frame.fonts) {
-      if (seenFont.has(font.url)) continue;
-      seenFont.add(font.url);
+      // A url can legitimately appear under two families, and each weight is
+      // its own entry, so the family and weight are part of the identity.
+      const key = `${font.fontFamily}|${font.weight}|${font.url}`;
+      if (seenFont.has(key)) continue;
+      seenFont.add(key);
       merged.fonts.push(font);
     }
   }
@@ -431,6 +444,9 @@ function card(asset: Asset): HTMLElement {
   const meta: string[] = [asset.fileType];
   if (asset.size !== "—") meta.push(asset.size);
   if (asset.category === "fonts") {
+    // The page never served a .ttf, so say where this one comes from rather
+    // than implying the site had it all along.
+    if (asset.convertFrom) meta.push(`from ${asset.convertFrom.toUpperCase()}`);
     meta.push(`${asset.weights.length} weight${asset.weights.length === 1 ? "" : "s"}`);
   }
   if (asset.category === "video" && asset.audioUrl) meta.push("video + audio");
@@ -448,6 +464,8 @@ function card(asset: Asset): HTMLElement {
 
   const actions = document.createElement("div");
   actions.className = "actions";
+
+  const variants = "variants" in asset ? (asset.variants ?? []) : [];
 
   const action = document.createElement("button");
   action.className = "icon-btn";
@@ -476,6 +494,11 @@ function card(asset: Asset): HTMLElement {
       } catch (error) {
         action.textContent = "!";
         action.title = (error as Error).message;
+        // A 28px button can't hold a sentence. The dialog can, and it also
+        // offers the formats that would have worked instead.
+        if (variants.length > 1) {
+          openVariantDialog(asset, variants, (error as Error).message);
+        }
       } finally {
         action.disabled = false;
       }
@@ -483,9 +506,172 @@ function card(asset: Asset): HTMLElement {
   }
   actions.append(action);
 
+  if (variants.length > 1) actions.append(variantMenu(asset, variants));
+
   info.append(line, actions);
   wrapper.append(info);
   return wrapper;
+}
+
+// "1080p" means nothing to most people; "Full HD" does. Ordered high to low
+// and matched on the first threshold the height clears.
+const QUALITY_NAMES: Array<[number, string]> = [
+  [2160, "4K Ultra HD"],
+  [1440, "2K"],
+  [1080, "Full HD"],
+  [720, "HD"],
+  [480, "Standard"],
+  [0, "Low quality"],
+];
+
+// A filename tells the user nothing about which download to pick. What they
+// need is how good it looks and how big it is — or, for a font, which format
+// it lands in and whether that one installs.
+function variantLabel(
+  variant: MediaVariant,
+  siblings: MediaVariant[],
+): { title: string; detail: string } {
+  if (variant.drmProtected) return { title: "Protected", detail: "can't download" };
+  if (variant.wasStreaming) {
+    return { title: "Stream", detail: "assembled on download" };
+  }
+  if (variant.convertFont) {
+    // The wrapper it came out of is the same file offered unconverted, so the
+    // sibling entry names the source without the card having to carry it.
+    const source = siblings.find(
+      (other) => other.url === variant.url && !other.convertFont,
+    );
+    return {
+      title: variant.fileType,
+      detail: source ? `from ${source.fileType}` : "converted",
+    };
+  }
+  if (/^original$/i.test(variant.quality ?? "")) {
+    return { title: "Original", detail: "full quality" };
+  }
+  const height = Number(/^(\d{3,4})p$/i.exec(variant.quality ?? "")?.[1] ?? 0);
+  if (height) {
+    return {
+      title: QUALITY_NAMES.find(([min]) => height >= min)?.[1] ?? "Low quality",
+      detail: variant.quality ?? "",
+    };
+  }
+  return { title: variant.fileType, detail: "" };
+}
+
+/**
+ * The chevron beside the download button. It opens a modal rather than a panel
+ * inside the card: the grid puts every card in a row on the same track, so
+ * anything that grows a card taller shoves its whole row down.
+ */
+function variantMenu(asset: Asset, variants: MediaVariant[]): HTMLButtonElement {
+  const isFont = asset.category === "fonts";
+
+  const toggle = document.createElement("button");
+  toggle.className = "icon-btn";
+  toggle.type = "button";
+  toggle.setAttribute("aria-haspopup", "dialog");
+  toggle.title = isFont
+    ? `Other formats (${variants.length})`
+    : `Other qualities (${variants.length})`;
+  toggle.innerHTML = icon("chevron");
+  toggle.onclick = () => openVariantDialog(asset, variants);
+  return toggle;
+}
+
+function showSheetError(dialog: HTMLElement, message: string): void {
+  let note = dialog.querySelector<HTMLParagraphElement>(".sheet-error");
+  if (!note) {
+    note = document.createElement("p");
+    note.className = "sheet-error";
+    // Above Cancel: it explains the rows, so it belongs with them rather than
+    // stranded under the way out.
+    const close = dialog.querySelector(".sheet-close");
+    if (close) close.before(note);
+    else dialog.append(note);
+  }
+  note.textContent = message;
+}
+
+function openVariantDialog(
+  asset: Asset,
+  variants: MediaVariant[],
+  error?: string,
+): void {
+  const isFont = asset.category === "fonts";
+
+  // <dialog> rather than a hand-rolled overlay: Escape, the backdrop and the
+  // focus trap all come with it.
+  const dialog = document.createElement("dialog");
+  dialog.className = "sheet";
+
+  const head = document.createElement("p");
+  head.className = "sheet-head";
+  head.textContent = isFont
+    ? "Choose a format to download"
+    : "Choose a quality to download";
+
+  const name = document.createElement("p");
+  name.className = "sheet-name";
+  name.textContent =
+    asset.category === "fonts" ? asset.fontFamily || asset.name : asset.name;
+
+  dialog.append(name, head);
+
+  for (const variant of variants) {
+    const { title, detail } = variantLabel(variant, variants);
+    const body =
+      `<span class="variant-name">${escapeHtml(title)}</span>` +
+      (detail ? `<span class="variant-detail">${escapeHtml(detail)}</span>` : "") +
+      (variant.recommended ? `<span class="variant-best">Best</span>` : "") +
+      `<span class="variant-size">${escapeHtml(variant.size)}</span>`;
+
+    if (variant.drmProtected) {
+      const row = document.createElement("p");
+      row.className = "variant disabled";
+      row.innerHTML = body;
+      dialog.append(row);
+      continue;
+    }
+
+    const row = document.createElement("button");
+    row.className = "variant";
+    row.type = "button";
+    row.innerHTML = body;
+    row.onclick = async () => {
+      const size = row.querySelector(".variant-size") as HTMLElement;
+      row.disabled = true;
+      size.textContent = "…";
+      try {
+        await downloadVariant(asset, variant);
+        size.textContent = "✓";
+        // Long enough to read the tick, short enough not to feel stuck.
+        setTimeout(() => dialog.close(), 600);
+      } catch (error) {
+        size.textContent = "!";
+        showSheetError(dialog, (error as Error).message);
+        row.disabled = false;
+      }
+    };
+    dialog.append(row);
+  }
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "btn ghost tiny sheet-close";
+  close.textContent = "Cancel";
+  close.onclick = () => dialog.close();
+  dialog.append(close);
+
+  // Clicking the backdrop lands on the dialog itself, never on a child.
+  dialog.onclick = (event) => {
+    if (event.target === dialog) dialog.close();
+  };
+  dialog.addEventListener("close", () => dialog.remove());
+
+  document.body.append(dialog);
+  dialog.showModal();
+  if (error) showSheetError(dialog, error);
 }
 
 function saveBlob(blob: Blob, filename: string): void {
@@ -522,12 +708,18 @@ async function zipAssets(
       const streaming =
         (asset.category === "video" || asset.category === "audio") &&
         asset.wasStreaming;
-      const source = streaming
-        ? (await assembleStream(asset.url)).url
-        : (asset as Asset & { url: string }).url;
-      const res = await fetch(source, { credentials: "include" });
-      if (!res.ok) continue;
-      zip.folder(asset.category)?.file(asset.name, await res.blob());
+
+      if (streaming) {
+        const res = await fetch((await assembleStream(asset.url)).url);
+        if (!res.ok) continue;
+        zip.folder(asset.category)?.file(asset.name, await res.blob());
+      } else {
+        // Fonts come back unwrapped, so the entry matches the name the card
+        // showed instead of being a .woff2 wearing a .ttf label.
+        const file = await assetBlob(asset as Asset & { url: string });
+        if (!file) continue;
+        zip.folder(asset.category)?.file(file.filename, file.blob);
+      }
       // Without its partner track the video is silent.
       if (asset.category === "video" && asset.audioUrl && asset.audioName) {
         const audio = await fetch(asset.audioUrl, { credentials: "include" });

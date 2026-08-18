@@ -16,14 +16,17 @@ export function collectSnapshot(): PageSnapshot {
   const resources: PageSnapshot["resources"] = [];
   const seen = new Set<string>();
 
-  function absolute(raw: string | null | undefined): string | null {
+  function absolute(
+    raw: string | null | undefined,
+    base = document.baseURI,
+  ): string | null {
     if (!raw) return null;
     const trimmed = raw.trim();
     if (!trimmed || trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
       return null;
     }
     try {
-      const url = new URL(trimmed, document.baseURI);
+      const url = new URL(trimmed, base);
       return url.protocol === "http:" || url.protocol === "https:"
         ? url.toString()
         : null;
@@ -172,14 +175,139 @@ export function collectSnapshot(): PageSnapshot {
     return stem.replace(/\b\w/g, (c) => c.toUpperCase()) || "Font";
   }
 
-  const fonts = fontUrls.map((url) => {
-    const family = familyFor(url);
-    return {
+  // 0x41 is "A" — a subset whose range excludes it renders no Latin text at
+  // all, so it must never win the pick for a family.
+  function coversBasicLatin(rangeText: string): boolean {
+    for (const token of rangeText.split(",")) {
+      const range = token.trim().replace(/^u\+/i, "");
+      if (!range) continue;
+      const [startText, endText] = range.split("-");
+      const start = parseInt(startText.replace(/\?/g, "0"), 16);
+      const end = endText
+        ? parseInt(endText, 16)
+        : parseInt(startText.replace(/\?/g, "F"), 16);
+      if (Number.isNaN(start) || Number.isNaN(end)) continue;
+      if (start <= 0x41 && 0x41 <= end) return true;
+    }
+    return false;
+  }
+
+  // The url wins when it carries a real extension; format() is the fallback
+  // for the signed, extensionless paths font CDNs hand out.
+  const FORMAT_BY_HINT: Record<string, string> = {
+    woff2: "woff2",
+    woff: "woff",
+    truetype: "ttf",
+    opentype: "otf",
+    "embedded-opentype": "eot",
+    collection: "ttc",
+  };
+
+  function formatOf(url: string, hint: string): string | null {
+    const extension = /\.([a-z0-9]{2,5})$/i
+      .exec(url.split(/[?#]/)[0])?.[1]
+      ?.toLowerCase();
+    if (extension && /^(?:woff2|woff|ttf|otf|eot|ttc)$/.test(extension)) {
+      return extension;
+    }
+    return FORMAT_BY_HINT[hint.trim().toLowerCase()] ?? null;
+  }
+
+  const fonts: PageSnapshot["fonts"] = [];
+  const seenFont = new Set<string>();
+  // Every url any @font-face claimed, so the resource-timeline sweep below
+  // doesn't invent a second family for a file the CSS already named.
+  const declaredUrls = new Set<string>();
+
+  function pushFont(
+    rawUrl: string,
+    base: string,
+    fontFamily: string,
+    weight: string,
+    hint: string,
+    coversLatin: boolean,
+    declared: boolean,
+  ): void {
+    const url = absolute(rawUrl, base);
+    if (!url) return;
+    if (declared) declaredUrls.add(url);
+    const key = `${fontFamily}|${url}`;
+    if (seenFont.has(key)) return;
+    seenFont.add(key);
+    fonts.push({
+      fontFamily,
+      weight,
       url,
-      family,
-      weights: [...(weightsByFamily.get(family) ?? new Set(["—"]))].sort(),
-    };
-  });
+      format: formatOf(url, hint) as PageSnapshot["fonts"][number]["format"],
+      coversLatin,
+    });
+  }
+
+  // The CSSOM lists every url() in each src, including the formats this
+  // browser skipped — the resource timeline only ever shows the one it chose.
+  function readFontFaces(rules: CSSRuleList, base: string, depth: number): void {
+    if (depth > 3) return;
+    for (const rule of Array.from(rules)) {
+      const grouping = rule as CSSGroupingRule;
+      if (grouping.cssRules) {
+        readFontFaces(grouping.cssRules, base, depth + 1);
+        continue;
+      }
+      const face = rule as CSSFontFaceRule;
+      if (!face.style || typeof face.style.getPropertyValue !== "function") {
+        continue;
+      }
+      const src = face.style.getPropertyValue("src");
+      if (!src) continue;
+
+      const family = face.style
+        .getPropertyValue("font-family")
+        .replace(/^\s*["']|["']\s*$/g, "")
+        .trim();
+      if (!family) continue;
+
+      const weight = face.style.getPropertyValue("font-weight").trim() || "400";
+      const range = face.style.getPropertyValue("unicode-range").trim();
+      const coversLatin = range ? coversBasicLatin(range) : true;
+
+      const pattern =
+        /url\(\s*(?:"([^"]+)"|'([^']+)'|([^)]+))\s*\)(?:\s*format\(\s*(?:"([^"]+)"|'([^']+)'|([^)]+))\s*\))?/gi;
+      for (const match of Array.from(src.matchAll(pattern))) {
+        const rawUrl = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+        const hint = (match[4] ?? match[5] ?? match[6] ?? "").trim();
+        pushFont(rawUrl, base, family, weight, hint, coversLatin, true);
+      }
+    }
+  }
+
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      // A url() in CSS is relative to the stylesheet, not the page. Resolving
+      // against the page turns "fonts/x.woff2" in /assets/theme.css into a
+      // root-level URL that 404s — and, because the file the browser really
+      // loaded then looks like a different asset, into a duplicate card.
+      if (sheet.cssRules) {
+        readFontFaces(sheet.cssRules, sheet.href ?? document.baseURI, 0);
+      }
+    } catch {
+      // A cross-origin stylesheet throws on cssRules; the resource timeline
+      // below still catches whatever it actually loaded.
+    }
+  }
+
+  // Anything downloaded whose @font-face we couldn't read — a cross-origin
+  // sheet, or a face injected by script and since removed. A url the CSS did
+  // name is skipped outright: the family guessed from its filename
+  // ("Itc Garamond Cond.Static") would only stand up a duplicate card beside
+  // the real one.
+  for (const url of fontUrls) {
+    if (declaredUrls.has(url)) continue;
+    const family = familyFor(url);
+    const weights = [...(weightsByFamily.get(family) ?? new Set(["—"]))];
+    for (const weight of weights) {
+      pushFont(url, document.baseURI, family, weight, "", true, false);
+    }
+  }
 
   return {
     pageUrl: location.href,

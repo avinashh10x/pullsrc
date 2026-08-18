@@ -41,10 +41,25 @@ const QUALITY_NAMES: Array<[number, string]> = [
 ]
 
 // A filename tells the user nothing about which download to pick. What they
-// need is how good it looks and how big it is.
-function variantLabel(variant: MediaVariant): { title: string; detail: string } {
+// need is how good it looks and how big it is — or, for a font, which format
+// it lands in and whether that one installs.
+function variantLabel(
+  variant: MediaVariant,
+  siblings: MediaVariant[]
+): { title: string; detail: string } {
   if (variant.drmProtected) return { title: "Protected", detail: "can't download" }
   if (variant.wasStreaming) return { title: "Stream", detail: "assembled on download" }
+  if (variant.convertFont) {
+    // The wrapper it came out of is the same file offered unconverted, so the
+    // sibling entry names the source without the card having to carry it.
+    const source = siblings.find(
+      (other) => other.url === variant.url && !other.convertFont
+    )
+    return {
+      title: variant.fileType,
+      detail: source ? `from ${source.fileType}` : "converted",
+    }
+  }
   if (/^original$/i.test(variant.quality ?? "")) {
     return { title: "Original", detail: "full quality" }
   }
@@ -87,6 +102,9 @@ export function AssetCard({
 
   const metaParts = [asset.fileType, asset.size !== "—" ? asset.size : null].filter(Boolean)
   if (asset.category === "fonts") {
+    // The page never served a .ttf, so say where this one comes from rather
+    // than implying the site had it all along.
+    if (asset.convertFrom) metaParts.push(`from ${asset.convertFrom.toUpperCase()}`)
     metaParts.push(`${asset.weights.length} weight${asset.weights.length === 1 ? "" : "s"}`)
   }
   if (isDrm) metaParts.push("DRM")
@@ -184,7 +202,11 @@ export function AssetCard({
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={`Show ${variants.length} download variants for ${asset.name}`}
+                    aria-label={
+                      asset.category === "fonts"
+                        ? `Show ${variants.length} formats for ${asset.name}`
+                        : `Show ${variants.length} download variants for ${asset.name}`
+                    }
                   />
                 }
               >
@@ -199,10 +221,12 @@ export function AssetCard({
                 className="w-(--anchor-width)"
               >
                 <p className="px-2 pt-0.5 pb-1.5 text-xs text-muted-foreground">
-                  Choose a quality to download
+                  {asset.category === "fonts"
+                    ? "Choose a format to download"
+                    : "Choose a quality to download"}
                 </p>
                 {variants.map((variant) => {
-                  const { title, detail } = variantLabel(variant)
+                  const { title, detail } = variantLabel(variant, variants)
                   const undownloadable = variant.drmProtected
 
                   const row = (
@@ -228,14 +252,14 @@ export function AssetCard({
 
                   return undownloadable ? (
                     <p
-                      key={variant.url}
+                      key={`${variant.fileType}-${variant.url}`}
                       className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm text-muted-foreground"
                     >
                       {row}
                     </p>
                   ) : (
                     <PopoverClose
-                      key={variant.url}
+                      key={`${variant.fileType}-${variant.url}`}
                       render={
                         <a
                           href={variantHref(variant, asset.credit.originalUrl)}

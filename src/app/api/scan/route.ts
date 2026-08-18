@@ -1,5 +1,7 @@
 import * as cheerio from "cheerio";
 
+import { buildFontAssets } from "@/lib/pullsrc/font-assets";
+import { fontFormatFromUrl } from "@/lib/pullsrc/font-convert";
 import {
   assertSafePublicUrl,
   fetchTextSafely,
@@ -41,7 +43,6 @@ import type {
   AudioAsset,
   ColorAsset,
   CreditInfo,
-  FontAsset,
   ImageAsset,
   LogoAsset,
   MediaVariant,
@@ -241,28 +242,6 @@ async function mediaVariants(
 function familyFromFontFileName(url: string): string {
   const base = nameFromUrl(url).replace(/\.[a-z0-9]+$/i, "");
   return base.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-const WEIGHT_ORDER = [
-  "100",
-  "200",
-  "300",
-  "400",
-  "normal",
-  "500",
-  "600",
-  "700",
-  "bold",
-  "800",
-  "900",
-];
-
-function sortWeights(weights: string[]): string[] {
-  return [...weights].sort(
-    (a, b) =>
-      WEIGHT_ORDER.indexOf(a.toLowerCase()) -
-      WEIGHT_ORDER.indexOf(b.toLowerCase()),
-  );
 }
 
 function ndjson(event: ScanStreamEvent): string {
@@ -654,65 +633,26 @@ async function runScan(pageUrl: URL, send: (event: ScanStreamEvent) => void) {
     return text ? parseFontFaces(text, url) : [];
   });
 
-  const rawFontsFromPreload: RawFont[] = preloadFontUrls.map((url) => ({
-    fontFamily: familyFromFontFileName(url),
-    weight: "—",
-    url,
-    coversLatin: true,
-  }));
+  // A preloaded font is almost always one the stylesheet also declares, and
+  // the family guessed from its filename ("InterVariable S.P.0r27kd5h06n72")
+  // would otherwise stand up a second card beside the real one.
+  const declaredFontUrls = new Set(rawFontsFromCss.map((font) => font.url));
+  const rawFontsFromPreload: RawFont[] = preloadFontUrls
+    .filter((url) => !declaredFontUrls.has(url))
+    .map((url) => ({
+      fontFamily: familyFromFontFileName(url),
+      weight: "—",
+      url,
+      format: fontFormatFromUrl(url),
+      coversLatin: true,
+    }));
 
-  // A family usually resolves to many files (one per subset, weight and
-  // format) but the card offers a single download, so pick the one a person
-  // actually wants: readable Latin text, in the format browsers prefer, at
-  // regular weight.
-  function fontPickScore(font: RawFont): number {
-    let score = 0;
-    if (font.coversLatin) score += 4;
-    if (/\.woff2(?:[?#]|$)/i.test(font.url)) score += 2;
-    if (/^(?:400|normal)$/i.test(font.weight)) score += 1;
-    return score;
-  }
-
-  const fontsByFamily = new Map<
-    string,
-    { url: string; score: number; weights: Set<string> }
-  >();
-  for (const font of [...rawFontsFromCss, ...rawFontsFromPreload]) {
-    const existing = fontsByFamily.get(font.fontFamily);
-    const score = fontPickScore(font);
-    if (existing) {
-      existing.weights.add(font.weight);
-      if (score > existing.score) {
-        existing.url = font.url;
-        existing.score = score;
-      }
-    } else {
-      fontsByFamily.set(font.fontFamily, {
-        url: font.url,
-        score,
-        weights: new Set([font.weight]),
-      });
-    }
-  }
-
-  const fontEntries = [...fontsByFamily.entries()].slice(0, 12);
-  const fontMeta = await mapWithConcurrency(fontEntries, 6, ([, info]) =>
-    headSafely(info.url),
-  );
-
-  const fontAssets: FontAsset[] = fontEntries.map(
-    ([fontFamily, info], index) => ({
-      id: `font-${index}`,
-      category: "fonts",
-      name: nameFromUrl(info.url),
-      url: info.url,
-      fontFamily,
-      weights: sortWeights([...info.weights]),
-      fileType: fileTypeFromUrl(info.url, "FONT"),
-      size: formatBytes(fontMeta[index]?.contentLength ?? null),
-      sizeBytes: fontMeta[index]?.contentLength ?? null,
-      credit,
-    }),
+  // One card per family, headlined by the installable format and carrying the
+  // rest for the menu beside it. Shared with the extension so a font scanned
+  // either way offers the same downloads.
+  const fontAssets = await buildFontAssets(
+    [...rawFontsFromCss, ...rawFontsFromPreload],
+    credit,
   );
 
   send({ type: "category", category: "fonts", assets: fontAssets });

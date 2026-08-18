@@ -405,6 +405,109 @@ body {
   gap: 0.125rem;
 }
 
+/* A modal, not a panel inside the card: the grid keeps every card in a row on
+   one track, so growing a card shoves its whole row down. */
+.sheet {
+  width: min(19rem, calc(100vw - 2rem));
+  margin: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.sheet::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.sheet-name {
+  margin: 0;
+  padding: 0.25rem 0.35rem 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-head {
+  margin: 0 0 0.25rem;
+  padding: 0 0.35rem 0.35rem;
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+
+/* Errors go here rather than in a title attribute — a tooltip on a 28px
+   button is not somewhere anyone finds out why their download failed. */
+.sheet-error {
+  margin: 0.35rem 0 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: calc(var(--radius) * 0.6);
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+/* Quiet: the formats above it are the point, not dismissing them. */
+.sheet-close {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.variant {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0.35rem;
+  border: 0;
+  border-radius: calc(var(--radius) * 0.6);
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.74rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.variant:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.variant.disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+.variant-name {
+  font-weight: 500;
+}
+
+.variant-detail,
+.variant-size {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+/* Pushed to the right edge; the label and its detail keep the left. */
+.variant-size {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.variant-best {
+  border-radius: 0.25rem;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  padding: 0 0.25rem;
+  color: var(--primary);
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+
 /* Site: absolute top-4 left-4 with a translucent, blurred backing. A native
    checkbox ignores border-radius, so it is drawn from scratch to match the
    rounded card it sits on. */
